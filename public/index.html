@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agente Trader — análise de trade educacional com IA</title>
+<meta name="description" content="Agente Trader: organiza cenários, risco, setups, simulações e revisões com os 100 códigos de análise de trade. Educacional, não é recomendação de investimento.">
+<style>
+:root{
+  --fundo:#0b1220;--painel:#111a2b;--painel2:#162238;--borda:#223050;--texto:#e6ecf5;--texto2:#9fb0c9;
+  --acento:#2f7bff;--acento2:#19c8a5;--alerta:#ffb547;--erro:#ff6b6b;--usuario:#1d2a44;--raio:12px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--fundo);color:var(--texto);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+a{color:var(--acento)}
+header{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--borda);background:var(--painel)}
+header h1{font-size:1.05rem;margin:0;letter-spacing:.3px}
+header h1 span{color:var(--acento2)}
+header .sub{color:var(--texto2);font-size:.82rem}
+header .acoes{margin-left:auto;display:flex;gap:8px}
+button{cursor:pointer;border:1px solid var(--borda);background:var(--painel2);color:var(--texto);border-radius:9px;padding:8px 12px;font:inherit;font-size:.88rem}
+button:hover{border-color:var(--acento)}
+button.primario{background:var(--acento);border-color:var(--acento);color:#fff;font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.luz{width:9px;height:9px;border-radius:50%;background:#555;display:inline-block;margin-right:6px}
+.luz.ok{background:var(--acento2);box-shadow:0 0 8px var(--acento2)}
+.luz.falha{background:var(--erro)}
+main{flex:1;display:grid;grid-template-columns:1fr 340px;min-height:0}
+#mesa{display:flex;flex-direction:column;min-width:0}
+#conversa{flex:1;overflow-y:auto;padding:18px 20px;scroll-behavior:smooth}
+.fala{max-width:900px;margin:0 auto 16px;padding:12px 16px;border-radius:var(--raio);background:var(--painel);border:1px solid var(--borda)}
+.fala.usuario{background:var(--usuario);border-color:#2a3b60}
+.fala .autor{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:var(--texto2);margin-bottom:6px;display:flex;gap:8px;align-items:center}
+.fala .corpo{white-space:normal;word-wrap:break-word;overflow-wrap:anywhere}
+.fala .corpo h2{font-size:1rem;margin:14px 0 6px;color:var(--acento2)}
+.fala .corpo h3{font-size:.95rem;margin:12px 0 4px;color:var(--texto)}
+.fala .corpo p{margin:6px 0}
+.fala .corpo ul{margin:4px 0 8px;padding-left:18px}
+.fala .corpo li{margin:2px 0}
+.fala .corpo code{background:#0d1626;border:1px solid var(--borda);border-radius:5px;padding:1px 5px;font-size:.88em}
+.fala .corpo pre{background:#0d1626;border:1px solid var(--borda);border-radius:8px;padding:10px;overflow-x:auto}
+.fala .corpo strong{color:#fff}
+.fala .anexos{font-size:.8rem;color:var(--texto2);margin-top:6px}
+.fala .rodape{display:flex;gap:8px;margin-top:8px}
+.fala .rodape button{font-size:.78rem;padding:4px 9px}
+.digitando{display:inline-block;width:8px;height:14px;background:var(--acento2);animation:pisca 1s infinite;vertical-align:text-bottom}
+@keyframes pisca{50%{opacity:0}}
+#entrada{border-top:1px solid var(--borda);background:var(--painel);padding:10px 14px}
+#entrada .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.chip{background:var(--painel2);border:1px solid var(--borda);border-radius:999px;padding:3px 10px;font-size:.8rem;display:flex;gap:6px;align-items:center}
+.chip b{cursor:pointer;color:var(--texto2)}
+#entrada .linha{display:flex;gap:8px;align-items:flex-end;max-width:900px;margin:0 auto}
+textarea{flex:1;min-height:52px;max-height:240px;resize:vertical;background:#0d1626;color:var(--texto);border:1px solid var(--borda);border-radius:10px;padding:10px 12px;font:inherit}
+textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
+#entrada .aviso{max-width:900px;margin:8px auto 0;font-size:.74rem;color:var(--texto2);text-align:center}
+#lateral{border-left:1px solid var(--borda);background:var(--painel);display:flex;flex-direction:column;min-height:0}
+#lateral .topo{padding:12px 14px;border-bottom:1px solid var(--borda)}
+#lateral .topo h2{margin:0 0 6px;font-size:.95rem}
+#lateral input{width:100%;background:#0d1626;color:var(--texto);border:1px solid var(--borda);border-radius:8px;padding:8px 10px;font:inherit;font-size:.88rem}
+#lista{overflow-y:auto;flex:1;padding:6px 8px}
+.categoria{margin:8px 0 4px;padding:0 6px;font-size:.72rem;letter-spacing:.7px;text-transform:uppercase;color:var(--texto2)}
+.codigo{display:block;width:100%;text-align:left;background:transparent;border:1px solid transparent;padding:7px 8px;border-radius:8px;margin:2px 0}
+.codigo:hover{background:var(--painel2);border-color:var(--borda)}
+.codigo .n{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--acento);font-size:.86rem}
+.codigo .d{display:block;color:var(--texto2);font-size:.78rem;line-height:1.35;margin-top:2px}
+#abrirLateral{display:none}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal.aberto{display:flex}
+.modal .caixa{background:var(--painel);border:1px solid var(--borda);border-radius:var(--raio);padding:20px;max-width:460px;width:100%}
+.modal h2{margin:0 0 10px;font-size:1.05rem}
+.modal p{color:var(--texto2);font-size:.9rem}
+.modal input{width:100%;background:#0d1626;color:var(--texto);border:1px solid var(--borda);border-radius:8px;padding:10px;font:inherit;margin:8px 0 12px}
+.arrastando{outline:2px dashed var(--acento2);outline-offset:-6px}
+@media (max-width:900px){
+  main{grid-template-columns:1fr}
+  #lateral{position:fixed;top:0;right:0;bottom:0;width:min(92vw,360px);z-index:40;transform:translateX(100%);transition:transform .2s;box-shadow:-10px 0 30px rgba(0,0,0,.5)}
+  #lateral.aberto{transform:none}
+  #abrirLateral{display:inline-block}
+  header .sub{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>📈 Agente <span>Trader</span></h1>
+    <div class="sub">100 códigos de análise de trade · cenários, risco, setups, backtest, diário e psicologia · educacional</div>
+  </div>
+  <div class="acoes">
+    <span title="Estado do servidor"><span class="luz" id="luz"></span><span id="estado" style="font-size:.8rem;color:var(--texto2)">verificando…</span></span>
+    <button id="abrirLateral" onclick="document.getElementById('lateral').classList.toggle('aberto')">📋 Códigos</button>
+    <button onclick="limparConversa()" title="Começa uma conversa nova">🗑 Nova conversa</button>
+  </div>
+</header>
+
+<main>
+  <section id="mesa">
+    <div id="conversa" aria-live="polite"></div>
+    <div id="entrada">
+      <div class="chips" id="chips"></div>
+      <div class="linha">
+        <button onclick="document.getElementById('arquivo').click()" title="Anexar imagem do gráfico, PDF, CSV ou TXT (até 5, 20MB cada). Também pode colar a imagem com Ctrl+V ou arrastar para a conversa.">📎</button>
+        <input type="file" id="arquivo" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.csv,.txt,.md,.json,.tsv" style="display:none" onchange="adicionarArquivos(this.files); this.value=''">
+        <textarea id="campo" placeholder="Digite um código e o contexto. Ex.: /painel-trade WINFUT 15min, rompeu a máxima de ontem em 128.500 e devolveu metade… (Enter envia, Shift+Enter quebra linha)"></textarea>
+        <button class="primario" id="botao" onclick="enviar()">Enviar</button>
+      </div>
+      <p class="aviso">Conteúdo educacional. O agente organiza cenários, risco e simulações; não recomenda compra ou venda e não é recomendação de investimento (Resolução CVM 20/2021). A IA pode errar ou usar dados desatualizados. Decisões e riscos são exclusivamente seus.</p>
+    </div>
+  </section>
+
+  <aside id="lateral">
+    <div class="topo">
+      <h2>📋 Os 100 códigos</h2>
+      <input id="busca" placeholder="Buscar código ou tema (ex.: risco, rompimento, diário)" oninput="filtrarCodigos(this.value)">
+    </div>
+    <div id="lista"></div>
+  </aside>
+</main>
+
+<div class="modal" id="modalSenha">
+  <div class="caixa">
+    <h2>🔒 Acesso</h2>
+    <p>Este servidor pede uma senha de acesso.</p>
+    <input type="password" id="campoSenha" placeholder="Senha" onkeydown="if(event.key==='Enter') confirmarSenha()">
+    <button class="primario" onclick="confirmarSenha()">Entrar</button>
+  </div>
+</div>
+
+<script>
+const VERSAO = '1.0.0';
+const SAUDACAO = 'AGENTE TRADER online. 100 códigos de análise carregados.\n\nEnvie um código com o **ativo**, o **tempo gráfico**, o **período**, os **dados ou a imagem do gráfico** e o **objetivo** da análise. Quanto mais contexto, melhor a organização da resposta.\n\n— Sem saber por onde começar? Abra a lista de códigos ao lado ou digite `/painel-trade`.\n— Para revisar o dia: `/diario-trade`. Para checar o emocional antes de operar: `/check-emocional`.';
+const conversa = document.getElementById('conversa');
+const campo = document.getElementById('campo');
+const botao = document.getElementById('botao');
+let historico = [];
+let anexos = [];
+let enviando = false;
+let senha = '';
+try { senha = localStorage.getItem('trader.senha') || ''; } catch (_) {}
+
+// ---------- Markdown mínimo (##, ###, **, `código`, listas com — ou -, links) ----------
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function inline(s){
+  return esc(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+}
+function renderMd(texto){
+  const linhas = String(texto).replace(/\r/g,'').split('\n');
+  let html = '', emLista = false, emPre = false, pre = [];
+  const fecharLista = () => { if(emLista){ html += '</ul>'; emLista = false; } };
+  for(const l of linhas){
+    if(l.trim().startsWith('```')){ if(emPre){ html += '<pre>' + esc(pre.join('\n')) + '</pre>'; pre = []; emPre = false; } else { fecharLista(); emPre = true; } continue; }
+    if(emPre){ pre.push(l); continue; }
+    const t = l.trim();
+    if(!t){ fecharLista(); continue; }
+    let m;
+    if((m = t.match(/^###\s+(.*)/))){ fecharLista(); html += '<h3>' + inline(m[1]) + '</h3>'; }
+    else if((m = t.match(/^##\s+(.*)/))){ fecharLista(); html += '<h2>' + inline(m[1]) + '</h2>'; }
+    else if((m = t.match(/^(?:—|-|•|\*)\s+(.*)/))){ if(!emLista){ html += '<ul>'; emLista = true; } html += '<li>' + inline(m[1]) + '</li>'; }
+    else { fecharLista(); html += '<p>' + inline(t) + '</p>'; }
+  }
+  if(emPre) html += '<pre>' + esc(pre.join('\n')) + '</pre>';
+  fecharLista();
+  return html;
+}
+
+// ---------- Conversa ----------
+function adicionarFala(autor, texto, classe){
+  const f = document.createElement('div');
+  f.className = 'fala ' + (classe || '');
+  f.innerHTML = '<div class="autor">' + esc(autor) + '</div><div class="corpo"></div>';
+  f.querySelector('.corpo').innerHTML = classe === 'usuario' ? '<p>' + inline(texto).replace(/\n/g,'<br>') + '</p>' : renderMd(texto);
+  conversa.appendChild(f);
+  conversa.scrollTop = conversa.scrollHeight;
+  return f;
+}
+function limparConversa(){
+  if(historico.length && !confirm('Começar uma conversa nova? A atual será apagada.')) return;
+  historico = []; anexos = []; renderChips();
+  conversa.innerHTML = '';
+  adicionarFala('Trader', SAUDACAO, 'trader');
+  salvarHistorico();
+}
+function salvarHistorico(){ try { localStorage.setItem('trader.historico', JSON.stringify(historico.slice(-40))); } catch(_){} }
+function restaurarHistorico(){
+  try {
+    const h = JSON.parse(localStorage.getItem('trader.historico') || '[]');
+    if(!Array.isArray(h) || !h.length) return false;
+    historico = h;
+    h.forEach(m => adicionarFala(m.role === 'user' ? 'Você' : 'Trader', m.content, m.role === 'user' ? 'usuario' : 'trader'));
+    return true;
+  } catch(_) { return false; }
+}
+
+// ---------- Anexos ----------
+function renderChips(){
+  const c = document.getElementById('chips');
+  c.innerHTML = anexos.map((a,i) => '<span class="chip">' + (/(png|jpe?g|webp|gif)$/i.test(a.nome) ? '🖼' : a.nome.endsWith('.pdf') ? '📄' : '📊') + ' ' + esc(a.nome) + ' <b onclick="removerAnexo(' + i + ')" title="Remover">✕</b></span>').join('');
+}
+function removerAnexo(i){ anexos.splice(i,1); renderChips(); }
+function adicionarArquivos(lista){
+  Array.from(lista || []).forEach(f => {
+    if(anexos.length >= 5) return alert('No máximo 5 anexos por mensagem.');
+    if(f.size > 20 * 1024 * 1024) return alert(f.name + ' passa de 20MB.');
+    const r = new FileReader();
+    r.onload = () => { anexos.push({ nome: f.name || ('colado-' + Date.now() + '.png'), dataB64: r.result }); renderChips(); };
+    r.readAsDataURL(f);
+  });
+}
+document.addEventListener('paste', e => {
+  const itens = Array.from(e.clipboardData && e.clipboardData.items || []).filter(i => i.kind === 'file');
+  if(!itens.length) return;
+  e.preventDefault();
+  adicionarArquivos(itens.map(i => i.getAsFile()).filter(Boolean));
+});
+['dragenter','dragover'].forEach(ev => document.body.addEventListener(ev, e => { if(Array.from(e.dataTransfer.types||[]).includes('Files')){ e.preventDefault(); document.body.classList.add('arrastando'); } }));
+['dragleave','drop'].forEach(ev => document.body.addEventListener(ev, e => { document.body.classList.remove('arrastando'); if(ev === 'drop'){ e.preventDefault(); adicionarArquivos(e.dataTransfer.files); } }));
+
+// ---------- Envio com streaming ----------
+campo.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); enviar(); } });
+async function enviar(){
+  const texto = campo.value.trim();
+  if((!texto && !anexos.length) || enviando) return;
+  enviando = true; botao.disabled = true; campo.value = '';
+  const rotulo = texto || 'Analise o material anexado.';
+  const f = adicionarFala('Você', rotulo, 'usuario');
+  if(anexos.length) f.querySelector('.corpo').insertAdjacentHTML('beforeend', '<div class="anexos">📎 ' + anexos.map(a => esc(a.nome)).join(' · ') + '</div>');
+  historico.push({ role: 'user', content: rotulo });
+  const arquivos = anexos.slice(); anexos = []; renderChips();
+
+  const fala = adicionarFala('Trader', '', 'trader');
+  const corpo = fala.querySelector('.corpo');
+  corpo.innerHTML = '<p><span class="digitando"></span></p>';
+  let completo = '';
+  try {
+    const resposta = await fetch('/api/chat', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, senha ? { 'X-Senha-Acesso': senha } : {}),
+      body: JSON.stringify({ messages: historico, arquivos })
+    });
+    if(resposta.status === 401){ historico.pop(); fala.remove(); f.remove(); campo.value = texto; anexos = arquivos; renderChips(); return pedirSenha(); }
+    if(!resposta.ok){
+      const d = await resposta.json().catch(() => ({}));
+      corpo.innerHTML = '<p style="color:var(--erro)">⚠️ ' + esc(d.erro || 'Falha na comunicação. Tente de novo.') + '</p>';
+      historico.pop(); salvarHistorico();
+      return;
+    }
+    const leitor = resposta.body.getReader();
+    const dec = new TextDecoder();
+    while(true){
+      const { done, value } = await leitor.read();
+      if(done) break;
+      completo += dec.decode(value, { stream: true });
+      corpo.innerHTML = renderMd(completo) + '<span class="digitando"></span>';
+      conversa.scrollTop = conversa.scrollHeight;
+    }
+    corpo.innerHTML = renderMd(completo || '(sem resposta)');
+    historico.push({ role: 'assistant', content: completo });
+    salvarHistorico();
+    const rod = document.createElement('div');
+    rod.className = 'rodape';
+    rod.innerHTML = '<button onclick="copiar(this)" title="Copia o texto da análise">📋 Copiar</button>';
+    fala.appendChild(rod);
+  } catch(e) {
+    corpo.innerHTML = renderMd(completo) + '<p style="color:var(--erro)">⚠️ Conexão interrompida. ' + esc(e.message || '') + '</p>';
+    if(completo) historico.push({ role: 'assistant', content: completo }); else historico.pop();
+    salvarHistorico();
+  } finally {
+    enviando = false; botao.disabled = false; campo.focus();
+  }
+}
+function copiar(b){
+  const texto = b.closest('.fala').querySelector('.corpo').innerText;
+  navigator.clipboard.writeText(texto).then(() => { b.textContent = '✅ Copiado'; setTimeout(() => b.textContent = '📋 Copiar', 1500); });
+}
+
+// ---------- Senha opcional ----------
+function pedirSenha(){ document.getElementById('modalSenha').classList.add('aberto'); document.getElementById('campoSenha').focus(); }
+async function confirmarSenha(){
+  const s = document.getElementById('campoSenha').value.trim();
+  if(!s) return;
+  const r = await fetch('/api/acesso', { method: 'POST', headers: { 'X-Senha-Acesso': s } });
+  if(r.ok){ senha = s; try { localStorage.setItem('trader.senha', s); } catch(_){} document.getElementById('modalSenha').classList.remove('aberto'); }
+  else alert('Senha inválida.');
+}
+
+// ---------- Lista dos 100 códigos ----------
+let categorias = [];
+function usarCodigo(codigo){
+  const atual = campo.value.trim();
+  campo.value = codigo + ' ' + (atual.startsWith('/') ? atual.replace(/^\/[a-z0-9-]+\s*/i, '') : atual);
+  campo.focus();
+  document.getElementById('lateral').classList.remove('aberto');
+}
+function renderCodigos(filtro){
+  const q = (filtro || '').toLowerCase().trim();
+  const lista = document.getElementById('lista');
+  lista.innerHTML = categorias.map(cat => {
+    const itens = cat.codigos.filter(c => !q || c.codigo.includes(q) || c.descricao.toLowerCase().includes(q) || cat.nome.toLowerCase().includes(q));
+    if(!itens.length) return '';
+    return '<div class="categoria">' + esc(cat.nome) + '</div>' + itens.map(c =>
+      '<button class="codigo" onclick="usarCodigo(\'' + c.codigo + '\')"><span class="n">' + esc(c.codigo) + '</span><span class="d">' + esc(c.descricao) + '</span></button>').join('');
+  }).join('') || '<p style="padding:10px;color:var(--texto2)">Nenhum código com esse termo.</p>';
+}
+function filtrarCodigos(v){ renderCodigos(v); }
+
+// ---------- Boot ----------
+fetch('/api/codigos').then(r => r.json()).then(d => { categorias = d.categorias || []; renderCodigos(''); }).catch(() => {});
+fetch('/api/saude').then(r => r.json()).then(d => {
+  const luz = document.getElementById('luz'), est = document.getElementById('estado');
+  if(d.chave && d.modeloValido !== false){ luz.className = 'luz ok'; est.textContent = d.modelo; }
+  else if(!d.chave){ luz.className = 'luz falha'; est.textContent = 'sem ANTHROPIC_API_KEY'; }
+  else { luz.className = 'luz falha'; est.textContent = 'modelo inválido: ' + d.modelo; }
+  if(d.senha && !senha) pedirSenha();
+}).catch(() => { document.getElementById('estado').textContent = 'servidor fora'; });
+if(!restaurarHistorico()) adicionarFala('Trader', SAUDACAO, 'trader');
+console.log('Agente Trader — frontend v' + VERSAO);
+</script>
+</body>
+</html>

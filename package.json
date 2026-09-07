@@ -1,0 +1,18 @@
+{
+  "name": "agente-trader",
+  "version": "1.0.0",
+  "description": "Agente Trader: análise de trade educacional com IA (Claude) e os 100 códigos de análise de trade",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node teste-trader.js",
+    "check": "node --check server.js && node --check trader.js && node --check teste-trader.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
+    "express": "^4.19.2"
+  }
+}
