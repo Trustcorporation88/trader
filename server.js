@@ -5,6 +5,7 @@
 // só aqui; o navegador nunca a vê. Uma rota de chat com streaming, anexos
 // (imagem do gráfico, PDF, planilha/CSV/TXT) e busca na web do próprio Claude.
 // ============================================================
+require('dotenv').config(); // carrega variáveis do arquivo .env (ex.: ANTHROPIC_API_KEY)
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -265,51 +266,50 @@ let _cotCache = null;
 let _cotCacheTs = 0;
 const COT_TTL = 55_000; // 55 segundos
 
-function fetchYahoo(simbolos) {
+// Busca uma cotação via endpoint público v8/chart do Yahoo (sem crumb/cookie, estável).
+function fetchCotacao(simbolo) {
   return new Promise((resolve, reject) => {
-    // Passo 1: pegar crumb + cookie
-    const crumbOpts = {
-      hostname: 'query2.finance.yahoo.com',
-      path: '/v1/test/getcrumb',
+    const opts = {
+      hostname: 'query1.finance.yahoo.com',
+      path: `/v8/finance/chart/${encodeURIComponent(simbolo)}?range=1d&interval=1d`,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
-        'Accept': 'text/plain',
-        'Cookie': 'A1=d=AQABBM; A3=d=AQABBM',
+        'Accept': 'application/json',
       },
       timeout: 8000,
     };
-    const r1 = https.get(crumbOpts, (res1) => {
-      let crumb = '';
-      res1.on('data', (c) => { crumb += c; });
-      res1.on('end', () => {
-        crumb = crumb.trim();
-        const cookie = (res1.headers['set-cookie'] || []).join('; ');
-        // Passo 2: buscar cotações com o crumb
-        const qs = `symbols=${encodeURIComponent(simbolos)}&crumb=${encodeURIComponent(crumb)}&fields=regularMarketPrice,regularMarketChangePercent,shortName,marketState`;
-        const q2opts = {
-          hostname: 'query1.finance.yahoo.com',
-          path: `/v7/finance/quote?${qs}`,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
-            'Accept': 'application/json',
-            'Cookie': cookie || 'A1=d=AQABBM; A3=d=AQABBM',
-          },
-          timeout: 8000,
-        };
-        const r2 = https.get(q2opts, (res2) => {
-          let data = '';
-          res2.on('data', (c) => { data += c; });
-          res2.on('end', () => {
-            try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+    const r = https.get(opts, (resp) => {
+      let data = '';
+      resp.on('data', (c) => { data += c; });
+      resp.on('end', () => {
+        try {
+          const j = JSON.parse(data);
+          const meta = j && j.chart && j.chart.result && j.chart.result[0] && j.chart.result[0].meta;
+          if (!meta || meta.regularMarketPrice == null) return reject(new Error(`sem dados para ${simbolo}`));
+          const preco = meta.regularMarketPrice;
+          const anterior = meta.chartPreviousClose != null ? meta.chartPreviousClose : meta.previousClose;
+          const variacao = anterior ? ((preco - anterior) / anterior) * 100 : null;
+          resolve({
+            symbol: simbolo,
+            shortName: meta.shortName || simbolo,
+            regularMarketPrice: preco,
+            regularMarketChangePercent: variacao,
+            marketState: meta.marketState || null,
           });
-        });
-        r2.on('timeout', () => { r2.destroy(); reject(new Error('timeout quotes')); });
-        r2.on('error', reject);
+        } catch (e) { reject(e); }
       });
     });
-    r1.on('timeout', () => { r1.destroy(); reject(new Error('timeout crumb')); });
-    r1.on('error', reject);
+    r.on('timeout', () => { r.destroy(); reject(new Error(`timeout ${simbolo}`)); });
+    r.on('error', reject);
   });
+}
+
+// Busca todas as cotações em paralelo; símbolos que falharem são omitidos.
+async function fetchCotacoes(simbolos) {
+  const resultados = await Promise.allSettled(simbolos.map((s) => fetchCotacao(s)));
+  const result = resultados.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  if (!result.length) throw new Error('nenhuma cotação disponível');
+  return { quoteResponse: { result } };
 }
 
 app.get('/api/cotacoes', async (_req, res) => {
@@ -319,7 +319,7 @@ app.get('/api/cotacoes', async (_req, res) => {
       res.setHeader('Cache-Control', 'public, max-age=55');
       return res.json(_cotCache);
     }
-    const data = await fetchYahoo(SIMBOLOS_COTACOES.join(','));
+    const data = await fetchCotacoes(SIMBOLOS_COTACOES);
     _cotCache = data;
     _cotCacheTs = Date.now();
     res.setHeader('Cache-Control', 'public, max-age=55');
