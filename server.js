@@ -21,6 +21,7 @@ const SENHA_ACESSO = (process.env.SENHA_ACESSO || '').trim();
 const MAX_TOKENS = 16_000;
 const MAX_HISTORICO = 40;         // turnos enviados ao modelo
 const MAX_CHARS_MENSAGEM = 30_000;
+const MAX_CHARS_HISTORICO = 400_000; // total de chars no histórico enviado ao modelo
 const MAX_ANEXOS = 5;
 const MAX_ANEXO_MB = 20;          // por arquivo (a API limita o pedido inteiro em ~32MB)
 const TURNOS_COM_ANEXO = 2;       // anexos dos N turnos mais recentes seguem visíveis
@@ -47,6 +48,12 @@ async function validarModelo() {
   } catch (e) {
     console.error('Não consegui listar os modelos da Anthropic:', e.message);
   }
+}
+
+// ---------- Logging básico ----------
+function log(nivel, ...args) {
+  const ts = new Date().toISOString();
+  (nivel === 'erro' ? console.error : console.log)(`[${ts}] [${nivel.toUpperCase()}]`, ...args);
 }
 
 // ---------- Rate limit simples por IP ----------
@@ -169,6 +176,16 @@ app.post('/api/chat', limitar, exigirSenha, async (req, res) => {
   if (historico[0].role !== 'user') historico.unshift({ role: 'user', content: 'Olá.' });
   if (historico[historico.length - 1].role !== 'user') return res.status(400).json({ erro: 'A última mensagem precisa ser sua.' });
 
+  // Trunca histórico antigo se ultrapassar o limite total de caracteres
+  let totalChars = historico.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : 0), 0);
+  while (historico.length > 2 && totalChars > MAX_CHARS_HISTORICO) {
+    const removido = historico.shift();
+    if (historico[0] && historico[0].role === 'assistant') historico.shift(); // remove par
+    totalChars = historico.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : 0), 0);
+    void removido;
+  }
+  if (historico[0].role !== 'user') historico.unshift({ role: 'user', content: 'Olá.' });
+
   let anexos;
   try { anexos = blocosDosAnexos(req.body.arquivos); } catch (e) { return res.status(400).json({ erro: e.message }); }
   if (anexos.binarios.length || anexos.textos.length) {
@@ -190,6 +207,10 @@ app.post('/api/chat', limitar, exigirSenha, async (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('X-Accel-Buffering', 'no');
+
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip;
+  const inicio = Date.now();
+  log('info', `chat ip=${ip} turnos=${historico.length} modelo=${MODEL}`);
 
   const stream = client.messages.stream({
     model: MODEL,
@@ -222,15 +243,43 @@ app.post('/api/chat', limitar, exigirSenha, async (req, res) => {
     if (final.stop_reason === 'refusal') {
       res.write((escreveu ? '\n\n' : '') + 'Não posso ajudar com esse pedido específico. Reformule dentro do escopo educacional do Trader.');
     }
+    const uso = final.usage || {};
+    log('info', `chat ok ip=${ip} dur=${Date.now()-inicio}ms in=${uso.input_tokens||'?'} out=${uso.output_tokens||'?'}`);
     res.end();
   } catch (err) {
     if (res.destroyed || (err && err.name === 'AbortError')) return res.end();
     const amigavel = mensagemErroAnthropic(err);
-    console.error('Erro /api/chat:', err && err.status, err && err.message);
+    log('erro', `chat ip=${ip} dur=${Date.now()-inicio}ms status=${err && err.status} msg=${err && err.message}`);
     if (!escreveu && !res.headersSent) return res.status(err && err.status >= 400 && err.status < 600 ? err.status : 502).json({ erro: amigavel });
     res.write(`\n\n⚠️ ${amigavel}`);
     res.end();
   }
+});
+
+// ---------- Cotações (proxy Yahoo Finance — evita CORS no navegador) ----------
+const https = require('https');
+const SIMBOLOS_COTACOES = ['^BVSP', 'USDBRL=X', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
+
+app.get('/api/cotacoes', (_req, res) => {
+  const simbolos = SIMBOLOS_COTACOES.join(',');
+  const url = `https://query1.finance.yahoo.com/v8/finance/quote?symbols=${encodeURIComponent(simbolos)}&fields=regularMarketPrice,regularMarketChangePercent,shortName,marketState`;
+  const opts = { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, timeout: 8000 };
+  let respondeu = false;
+  const req2 = https.get(url, opts, (r) => {
+    let data = '';
+    r.on('data', (c) => { data += c; });
+    r.on('end', () => {
+      if (respondeu) return; respondeu = true;
+      try {
+        res.setHeader('Cache-Control', 'public, max-age=55');
+        res.json(JSON.parse(data));
+      } catch {
+        res.status(502).json({ erro: 'Falha ao processar cotações.' });
+      }
+    });
+  });
+  req2.on('timeout', () => { req2.destroy(); if (!respondeu) { respondeu = true; res.status(504).json({ erro: 'Timeout ao buscar cotações.' }); } });
+  req2.on('error', () => { if (!respondeu) { respondeu = true; res.status(502).json({ erro: 'Falha ao buscar cotações.' }); } });
 });
 
 app.get('/robots.txt', (_req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));

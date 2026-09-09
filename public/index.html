@@ -72,6 +72,15 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
 .modal p{color:var(--texto2);font-size:.9rem}
 .modal input{width:100%;background:#0d1626;color:var(--texto);border:1px solid var(--borda);border-radius:8px;padding:10px;font:inherit;margin:8px 0 12px}
 .arrastando{outline:2px dashed var(--acento2);outline-offset:-6px}
+/* --- Barra de cotações --- */
+#cotacoes-bar{background:#0d1626;border-bottom:1px solid var(--borda);padding:5px 14px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;min-height:28px}
+#cotacoes-bar .cot-item{display:flex;gap:5px;align-items:baseline;white-space:nowrap}
+#cotacoes-bar .cot-nome{color:var(--texto2);font-size:.78rem;letter-spacing:.4px}
+#cotacoes-bar .cot-preco{color:var(--texto);font-weight:600}
+#cotacoes-bar .cot-var{font-size:.8rem}
+#cotacoes-bar .cot-var.alta{color:var(--acento2)}
+#cotacoes-bar .cot-var.baixa{color:var(--erro)}
+#cotacoes-bar .cot-fonte{margin-left:auto;color:#3a4a60;font-size:.72rem;white-space:nowrap}
 @media (max-width:900px){
   main{grid-template-columns:1fr}
   #lateral{position:fixed;top:0;right:0;bottom:0;width:min(92vw,360px);z-index:40;transform:translateX(100%);transition:transform .2s;box-shadow:-10px 0 30px rgba(0,0,0,.5)}
@@ -93,6 +102,8 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
     <button onclick="limparConversa()" title="Começa uma conversa nova">🗑 Nova conversa</button>
   </div>
 </header>
+
+<div id="cotacoes-bar"><span style="color:#3a4a60;font-size:.78rem">carregando cotações…</span></div>
 
 <main>
   <section id="mesa">
@@ -318,6 +329,38 @@ fetch('/api/saude').then(r => r.json()).then(d => {
 }).catch(() => { document.getElementById('estado').textContent = 'servidor fora'; });
 if(!restaurarHistorico()) adicionarFala('Trader', SAUDACAO, 'trader');
 console.log('Agente Trader — frontend v' + VERSAO);
+
+// ---------- Cotações em tempo real ----------
+const NOMES_COT = { '^BVSP':'IBOV', 'USDBRL=X':'USD/BRL', 'BTC-USD':'BTC', 'BZ=F':'BRENT', '^GSPC':'S&P500', '^DJI':'DJIA' };
+const fmt = (v, simbolo) => {
+  if(v == null) return '—';
+  if(simbolo === 'USDBRL=X') return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  if(simbolo === 'BTC-USD') return 'US$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits:0, maximumFractionDigits:0 });
+  return v.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+};
+async function atualizarCotacoes(){
+  try {
+    const r = await fetch('/api/cotacoes');
+    if(!r.ok) return;
+    const d = await r.json();
+    const quotes = (d && d.quoteResponse && d.quoteResponse.result) || [];
+    if(!quotes.length) return;
+    const bar = document.getElementById('cotacoes-bar');
+    const agora = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+    bar.innerHTML = quotes.map(q => {
+      const chg = q.regularMarketChangePercent != null ? q.regularMarketChangePercent : null;
+      const cls = chg == null ? '' : chg >= 0 ? 'alta' : 'baixa';
+      const sinal = chg == null ? '' : chg >= 0 ? '▲' : '▼';
+      const varTxt = chg != null ? sinal + Math.abs(chg).toFixed(2) + '%' : '';
+      return '<span class="cot-item"><span class="cot-nome">' + (NOMES_COT[q.symbol] || q.symbol) + '</span>'
+        + '<span class="cot-preco">' + fmt(q.regularMarketPrice, q.symbol) + '</span>'
+        + (varTxt ? '<span class="cot-var ' + cls + '">' + varTxt + '</span>' : '')
+        + '</span>';
+    }).join('') + '<span class="cot-fonte">Yahoo Finance · ~15min delay · ' + agora + '</span>';
+  } catch(_) { /* silencioso */ }
+}
+atualizarCotacoes();
+setInterval(atualizarCotacoes, 60_000);
 </script>
 </body>
 </html>
