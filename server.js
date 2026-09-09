@@ -151,6 +151,7 @@ function podarAnexosAntigos(historico) {
 // ---------- Rotas ----------
 app.get('/api/saude', (_req, res) => res.json({
   ok: true, chave: !!client, modelo: MODEL, modeloValido, effort: EFFORT, senha: !!SENHA_ACESSO, codigos: CODIGOS_TRADER.length,
+  finnhub: !!FINNHUB_KEY, fred: !!FRED_KEY, // conferir depois do deploy se as Variables chegaram
 }));
 
 app.get('/api/codigos', (_req, res) => res.json({
@@ -312,17 +313,18 @@ async function fetchCotacoes(simbolos) {
   return { quoteResponse: { result } };
 }
 
-app.get('/api/cotacoes', async (_req, res) => {
+app.get('/api/cotacoes', async (req, res) => {
   try {
+    const forcar = /^(1|true|sim)$/i.test(String(req.query.force || ''));
     const agora = Date.now();
-    if (_cotCache && agora - _cotCacheTs < COT_TTL) {
+    if (!forcar && _cotCache && agora - _cotCacheTs < COT_TTL) {
       res.setHeader('Cache-Control', 'public, max-age=55');
       return res.json(_cotCache);
     }
     const data = await fetchCotacoes(SIMBOLOS_COTACOES);
     _cotCache = data;
     _cotCacheTs = Date.now();
-    res.setHeader('Cache-Control', 'public, max-age=55');
+    res.setHeader('Cache-Control', forcar ? 'no-store' : 'public, max-age=55');
     res.json(data);
   } catch (e) {
     log('erro', 'cotacoes:', e.message);
@@ -400,6 +402,153 @@ app.get('/api/ativo', async (req, res) => {
   }
 });
 
+// ============================================================
+// PAINEL EUA — notícias (Finnhub), indicadores macro (FRED) e cotações de ações (Finnhub)
+// As chaves ficam só no servidor e vêm exclusivamente do ambiente (.env local,
+// Variables no Railway). Sem elas as rotas /api/eua/* respondem 503 e o resto do
+// app segue funcionando normalmente.
+// ============================================================
+const FRED_KEY = (process.env.FRED_API_KEY || '').trim();
+const FINNHUB_KEY = (process.env.FINNHUB_API_KEY || '').trim();
+
+/** Responde 503 e devolve true quando a chave da API não está configurada. */
+function faltaChave(chave, nome, res) {
+  if (chave) return false;
+  res.status(503).json({ erro: `${nome} não configurada no servidor.` });
+  return true;
+}
+
+// Helper genérico: GET JSON com timeout. Aceita URL completa.
+function fetchJson(url, { timeout = 8000, headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const r = https.get(url, {
+      headers: { 'User-Agent': 'agente-trader', 'Accept': 'application/json', ...headers },
+      timeout,
+    }, (resp) => {
+      let data = '';
+      resp.on('data', (c) => { data += c; });
+      resp.on('end', () => {
+        if (resp.statusCode < 200 || resp.statusCode >= 300) return reject(new Error(`HTTP ${resp.statusCode}`));
+        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+      });
+    });
+    r.on('timeout', () => { r.destroy(); reject(new Error('timeout')); });
+    r.on('error', reject);
+  });
+}
+
+// Cache em memória simples (por chave) para não estourar os limites das APIs.
+const _euaCache = new Map(); // chave -> { data, ts }
+function cacheGet(chave, ttl, forcar) {
+  if (forcar) return null;
+  const c = _euaCache.get(chave);
+  return c && Date.now() - c.ts < ttl ? c.data : null;
+}
+function cacheSet(chave, data) { _euaCache.set(chave, { data, ts: Date.now() }); }
+function ehForce(req) { return /^(1|true|sim)$/i.test(String(req.query.force || '')); }
+
+// ---------- Cotações de ações dos EUA (Finnhub) ----------
+const ACOES_EUA = [
+  { symbol: 'AAPL', nome: 'Apple' },
+  { symbol: 'MSFT', nome: 'Microsoft' },
+  { symbol: 'NVDA', nome: 'NVIDIA' },
+  { symbol: 'AMZN', nome: 'Amazon' },
+  { symbol: 'GOOGL', nome: 'Alphabet' },
+  { symbol: 'META', nome: 'Meta' },
+  { symbol: 'TSLA', nome: 'Tesla' },
+];
+async function fetchAcaoEUA(a) {
+  const j = await fetchJson(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(a.symbol)}&token=${FINNHUB_KEY}`);
+  if (!j || j.c == null || j.c === 0) throw new Error(`sem dados para ${a.symbol}`);
+  return { symbol: a.symbol, nome: a.nome, preco: j.c, variacao: j.dp, anterior: j.pc, alta: j.h, baixa: j.l };
+}
+
+app.get('/api/eua/cotacoes', async (req, res) => {
+  if (faltaChave(FINNHUB_KEY, 'FINNHUB_API_KEY', res)) return;
+  const forcar = ehForce(req);
+  const cache = cacheGet('acoes', 30_000, forcar);
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=30'); return res.json(cache); }
+  try {
+    const resultados = await Promise.allSettled(ACOES_EUA.map((a) => fetchAcaoEUA(a)));
+    const result = resultados.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+    if (!result.length) throw new Error('nenhuma cotação EUA disponível');
+    const data = { result };
+    cacheSet('acoes', data);
+    res.setHeader('Cache-Control', forcar ? 'no-store' : 'public, max-age=30');
+    res.json(data);
+  } catch (e) {
+    log('erro', 'eua/cotacoes:', e.message);
+    const c = _euaCache.get('acoes');
+    if (c) { res.setHeader('Cache-Control', 'public, max-age=10'); return res.json(c.data); }
+    res.status(502).json({ erro: 'Falha ao buscar cotações dos EUA.' });
+  }
+});
+
+// ---------- Notícias dos EUA (Finnhub) ----------
+async function fetchNoticiasEUA() {
+  const j = await fetchJson(`https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_KEY}`);
+  if (!Array.isArray(j)) throw new Error('resposta de notícias inválida');
+  return j.slice(0, 15).map((n) => ({
+    titulo: n.headline, resumo: n.summary, fonte: n.source, url: n.url,
+    data: n.datetime ? n.datetime * 1000 : null, imagem: n.image || null,
+  })).filter((n) => n.titulo && n.url);
+}
+
+app.get('/api/eua/noticias', async (req, res) => {
+  if (faltaChave(FINNHUB_KEY, 'FINNHUB_API_KEY', res)) return;
+  const forcar = ehForce(req);
+  const cache = cacheGet('noticias', 300_000, forcar); // 5 min
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=300'); return res.json(cache); }
+  try {
+    const result = await fetchNoticiasEUA();
+    const data = { result };
+    cacheSet('noticias', data);
+    res.setHeader('Cache-Control', forcar ? 'no-store' : 'public, max-age=300');
+    res.json(data);
+  } catch (e) {
+    log('erro', 'eua/noticias:', e.message);
+    const c = _euaCache.get('noticias');
+    if (c) { res.setHeader('Cache-Control', 'public, max-age=30'); return res.json(c.data); }
+    res.status(502).json({ erro: 'Falha ao buscar notícias dos EUA.' });
+  }
+});
+
+// ---------- Indicadores macro dos EUA (FRED) ----------
+const FRED_SERIES = [
+  { id: 'FEDFUNDS', nome: 'Juros do Fed (Fed Funds)', sufixo: '%' },
+  { id: 'UNRATE',   nome: 'Desemprego (EUA)',          sufixo: '%' },
+  { id: 'CPIAUCSL', nome: 'CPI (índice de preços)',    sufixo: '' },
+  { id: 'DGS10',    nome: 'Treasury 10 anos',          sufixo: '%' },
+  { id: 'GDP',      nome: 'PIB (US$ bi)',              sufixo: '' },
+];
+async function fetchIndicadorFred(s) {
+  const j = await fetchJson(`https://api.stlouisfed.org/fred/series/observations?series_id=${encodeURIComponent(s.id)}&api_key=${FRED_KEY}&file_type=json&sort_order=desc&limit=1`);
+  const o = j && j.observations && j.observations[0];
+  if (!o || o.value == null || o.value === '.') throw new Error(`sem dados para ${s.id}`);
+  return { id: s.id, nome: s.nome, valor: Number(o.value), data: o.date, sufixo: s.sufixo };
+}
+
+app.get('/api/eua/indicadores', async (req, res) => {
+  if (faltaChave(FRED_KEY, 'FRED_API_KEY', res)) return;
+  const forcar = ehForce(req);
+  const cache = cacheGet('indicadores', 3_600_000, forcar); // 1 h
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=3600'); return res.json(cache); }
+  try {
+    const resultados = await Promise.allSettled(FRED_SERIES.map((s) => fetchIndicadorFred(s)));
+    const result = resultados.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+    if (!result.length) throw new Error('nenhum indicador disponível');
+    const data = { result };
+    cacheSet('indicadores', data);
+    res.setHeader('Cache-Control', forcar ? 'no-store' : 'public, max-age=3600');
+    res.json(data);
+  } catch (e) {
+    log('erro', 'eua/indicadores:', e.message);
+    const c = _euaCache.get('indicadores');
+    if (c) { res.setHeader('Cache-Control', 'public, max-age=60'); return res.json(c.data); }
+    res.status(502).json({ erro: 'Falha ao buscar indicadores dos EUA.' });
+  }
+});
+
 app.get('/robots.txt', (_req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
 app.use('/api', (_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
 
@@ -407,6 +556,8 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Agente Trader na porta ${PORT} · modelo ${MODEL} · effort ${EFFORT} · ${CODIGOS_TRADER.length} códigos`);
     if (!client) console.warn('ANTHROPIC_API_KEY ausente: o site abre, mas o chat responde 503.');
+    if (!FINNHUB_KEY) console.warn('FINNHUB_API_KEY ausente: /api/eua/cotacoes e /api/eua/noticias respondem 503.');
+    if (!FRED_KEY) console.warn('FRED_API_KEY ausente: /api/eua/indicadores responde 503.');
     validarModelo();
   });
 }
