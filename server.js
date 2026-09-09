@@ -331,6 +331,75 @@ app.get('/api/cotacoes', async (_req, res) => {
   }
 });
 
+// ---------- Dados reais de um ativo (topo/fundo/preço) para o Painel Guiado ----------
+// Busca histórico diário recente e devolve preço atual, topo e fundo reais do período.
+// Isso permite que o site sugira faixas dentro da realidade do ativo, sem inventar preço.
+function fetchAtivoDetalhe(simbolo) {
+  return new Promise((resolve, reject) => {
+    const opts = {
+      hostname: 'query1.finance.yahoo.com',
+      path: `/v8/finance/chart/${encodeURIComponent(simbolo)}?range=1mo&interval=1d`,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+        'Accept': 'application/json',
+      },
+      timeout: 8000,
+    };
+    const r = https.get(opts, (resp) => {
+      let data = '';
+      resp.on('data', (c) => { data += c; });
+      resp.on('end', () => {
+        try {
+          const j = JSON.parse(data);
+          const r0 = j && j.chart && j.chart.result && j.chart.result[0];
+          const meta = r0 && r0.meta;
+          if (!meta || meta.regularMarketPrice == null) return reject(new Error(`sem dados para ${simbolo}`));
+          const q = (r0.indicators && r0.indicators.quote && r0.indicators.quote[0]) || {};
+          const highs = (q.high || []).filter((v) => v != null);
+          const lows = (q.low || []).filter((v) => v != null);
+          const preco = meta.regularMarketPrice;
+          const anterior = meta.chartPreviousClose != null ? meta.chartPreviousClose : meta.previousClose;
+          resolve({
+            symbol: simbolo,
+            shortName: meta.shortName || simbolo,
+            preco,
+            anterior: anterior != null ? anterior : null,
+            variacao: anterior ? ((preco - anterior) / anterior) * 100 : null,
+            topo: highs.length ? Math.max(...highs) : null,       // máxima real do período
+            fundo: lows.length ? Math.min(...lows) : null,        // mínima real do período
+            pregoes: highs.length,
+            moeda: meta.currency || null,
+          });
+        } catch (e) { reject(e); }
+      });
+    });
+    r.on('timeout', () => { r.destroy(); reject(new Error(`timeout ${simbolo}`)); });
+    r.on('error', reject);
+  });
+}
+
+const _ativoCache = new Map(); // symbol -> { data, ts }
+app.get('/api/ativo', async (req, res) => {
+  const simbolo = String(req.query.symbol || '').trim();
+  if (!simbolo) return res.status(400).json({ erro: 'Informe ?symbol=' });
+  try {
+    const cache = _ativoCache.get(simbolo);
+    if (cache && Date.now() - cache.ts < COT_TTL) {
+      res.setHeader('Cache-Control', 'public, max-age=55');
+      return res.json(cache.data);
+    }
+    const data = await fetchAtivoDetalhe(simbolo);
+    _ativoCache.set(simbolo, { data, ts: Date.now() });
+    res.setHeader('Cache-Control', 'public, max-age=55');
+    res.json(data);
+  } catch (e) {
+    log('erro', 'ativo:', e.message);
+    const cache = _ativoCache.get(simbolo);
+    if (cache) { res.setHeader('Cache-Control', 'public, max-age=10'); return res.json(cache.data); }
+    res.status(502).json({ erro: 'Falha ao buscar dados do ativo.' });
+  }
+});
+
 app.get('/robots.txt', (_req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
 app.use('/api', (_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
 

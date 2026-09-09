@@ -81,6 +81,34 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
 #cotacoes-bar .cot-var.alta{color:var(--acento2)}
 #cotacoes-bar .cot-var.baixa{color:var(--erro)}
 #cotacoes-bar .cot-fonte{margin-left:auto;color:#3a4a60;font-size:.72rem;white-space:nowrap}
+/* --- Faixa de destaque para o Painel guiado --- */
+#cta-guia{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:linear-gradient(90deg,rgba(47,123,255,.12),rgba(25,200,165,.12));border-bottom:1px solid var(--borda)}
+#cta-guia button{font-size:.95rem;padding:9px 18px;box-shadow:0 0 0 3px rgba(47,123,255,.18)}
+#cta-guia .cta-txt{color:var(--texto2);font-size:.85rem}
+@media (max-width:600px){#cta-guia .cta-txt{display:none}}
+/* --- Painel guiado (quadros numerados) --- */
+.guia{max-width:900px;margin:0 auto 16px}
+.guia .quadro{background:var(--painel);border:1px solid var(--acento);border-radius:var(--raio);padding:16px 18px;box-shadow:0 0 0 3px rgba(47,123,255,.08)}
+.guia .passo{font-size:.74rem;text-transform:uppercase;letter-spacing:.7px;color:var(--acento);font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.guia .passo .barra{flex:1;height:5px;background:var(--painel2);border-radius:999px;overflow:hidden}
+.guia .passo .barra i{display:block;height:100%;background:var(--acento2);transition:width .25s}
+.guia h3.perg{margin:6px 0 4px;font-size:1.1rem;color:var(--texto)}
+.guia .ajuda{color:var(--texto2);font-size:.85rem;margin:0 0 12px}
+.guia .opcoes{display:grid;gap:8px}
+.guia .opcao{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;padding:11px 14px;border:1px solid var(--borda);background:var(--painel2);border-radius:10px;width:100%}
+.guia .opcao:hover{border-color:var(--acento2);background:#1a2740}
+.guia .opcao .titulo{font-weight:600;color:var(--texto);font-size:.95rem}
+.guia .opcao .titulo .num{display:inline-block;min-width:20px;color:var(--acento);font-family:ui-monospace,monospace;margin-right:6px}
+.guia .opcao .sub{color:var(--texto2);font-size:.8rem}
+.guia .navg{display:flex;gap:8px;margin-top:12px}
+.guia .navg .voltar{font-size:.82rem}
+.guia .resumo{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.guia .resumo .tag{background:#0d1626;border:1px solid var(--borda);border-radius:999px;padding:2px 9px;font-size:.76rem;color:var(--texto2)}
+.guia .resumo .tag b{color:var(--acento2);font-weight:600}
+.guia .painelfinal h3{color:var(--acento2);margin:14px 0 4px;font-size:.98rem}
+.guia .painelfinal .linha{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dashed var(--borda);font-size:.9rem}
+.guia .painelfinal .linha span:last-child{font-family:ui-monospace,monospace;color:var(--texto)}
+.guia .carregando{color:var(--texto2);font-size:.88rem;padding:8px 0}
 @media (max-width:900px){
   main{grid-template-columns:1fr}
   #lateral{position:fixed;top:0;right:0;bottom:0;width:min(92vw,360px);z-index:40;transform:translateX(100%);transition:transform .2s;box-shadow:-10px 0 30px rgba(0,0,0,.5)}
@@ -98,12 +126,18 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
   </div>
   <div class="acoes">
     <span title="Estado do servidor"><span class="luz" id="luz"></span><span id="estado" style="font-size:.8rem;color:var(--texto2)">verificando…</span></span>
+    <button class="primario" onclick="iniciarGuia()" title="Monta o painel passo a passo: você só escolhe entre as opções sugeridas">🧭 Painel guiado</button>
     <button id="abrirLateral" onclick="document.getElementById('lateral').classList.toggle('aberto')">📋 Códigos</button>
     <button onclick="limparConversa()" title="Começa uma conversa nova">🗑 Nova conversa</button>
   </div>
 </header>
 
 <div id="cotacoes-bar"><span style="color:#3a4a60;font-size:.78rem">carregando cotações…</span></div>
+
+<div id="cta-guia">
+  <button class="primario" onclick="iniciarGuia()" title="Monta o painel passo a passo: você só escolhe entre as opções sugeridas">🧭 Abrir Painel guiado</button>
+  <span class="cta-txt">Não sabe por onde começar? Monte a análise passo a passo, escolhendo só entre as opções sugeridas.</span>
+</div>
 
 <main>
   <section id="mesa">
@@ -140,7 +174,7 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
 
 <script>
 const VERSAO = '1.0.0';
-const SAUDACAO = 'AGENTE TRADER online. 100 códigos de análise carregados.\n\nEnvie um código com o **ativo**, o **tempo gráfico**, o **período**, os **dados ou a imagem do gráfico** e o **objetivo** da análise. Quanto mais contexto, melhor a organização da resposta.\n\n— Sem saber por onde começar? Abra a lista de códigos ao lado ou digite `/painel-trade`.\n— Para revisar o dia: `/diario-trade`. Para checar o emocional antes de operar: `/check-emocional`.';
+const SAUDACAO = 'AGENTE TRADER online. 100 códigos de análise carregados.\n\n**Não sabe por onde começar? Clique em 🧭 Painel guiado** (no topo). Eu monto o painel passo a passo: você só escolhe entre as opções que eu sugiro, e eu uso o preço, o topo e o fundo REAIS do ativo. Nada de digitar dados soltos.\n\n— Prefere o modo livre? Digite um código com o **ativo**, o **tempo gráfico** e o **objetivo** (ex.: `/painel-trade`).\n— Para revisar o dia: `/diario-trade`. Para checar o emocional antes de operar: `/check-emocional`.';
 const conversa = document.getElementById('conversa');
 const campo = document.getElementById('campo');
 const botao = document.getElementById('botao');
@@ -361,6 +395,199 @@ async function atualizarCotacoes(){
 }
 atualizarCotacoes();
 setInterval(atualizarCotacoes, 60_000);
+
+// ================= Painel guiado (quadros numerados, 1 escolha por vez) =================
+// O site conduz o usuário passo a passo. Cada quadro traz até 5 opções sugeridas e,
+// na etapa de preço, usa dados REAIS do ativo (topo/fundo/preço) vindos de /api/ativo.
+const GUIA_ATIVOS = [
+  { symbol:'^BVSP',    nome:'IBOV / Mini índice (WIN)', sub:'Índice Bovespa — base do WINFUT' },
+  { symbol:'USDBRL=X', nome:'Dólar / Mini dólar (WDO)',  sub:'USD/BRL — base do WDOFUT' },
+  { symbol:'BTC-USD',  nome:'Bitcoin (BTC)',             sub:'Cripto, 24h, alta volatilidade' },
+  { symbol:'^GSPC',    nome:'S&P 500',                   sub:'Índice das maiores empresas dos EUA' },
+  { symbol:'^DJI',     nome:'Dow Jones (DJIA)',          sub:'Índice industrial dos EUA' },
+];
+const GUIA_PASSOS = [
+  { chave:'ativo',    perg:'Qual ativo você quer analisar?', ajuda:'Escolha o mercado. Vou puxar o preço, topo e fundo reais dele.', opcoes:GUIA_ATIVOS.map(a=>({ valor:a.symbol, titulo:a.nome, sub:a.sub })) },
+  { chave:'tempo',    perg:'Qual tempo gráfico?', ajuda:'Define o "zoom" da leitura. Menor = mais rápido e mais ruído; maior = mais estrutura.', opcoes:[
+      { valor:'5min', titulo:'5 minutos', sub:'Scalp / day trade rápido' },
+      { valor:'15min', titulo:'15 minutos', sub:'Day trade (mais comum)' },
+      { valor:'60min', titulo:'60 minutos', sub:'Day trade calmo / swing curto' },
+      { valor:'diário', titulo:'Diário', sub:'Swing de dias a semanas' },
+      { valor:'semanal', titulo:'Semanal', sub:'Posição de longo prazo' } ] },
+  { chave:'objetivo', perg:'Qual é o seu objetivo?', ajuda:'Isso muda o cuidado com gap e o horizonte da operação.', opcoes:[
+      { valor:'day trade', titulo:'Day trade', sub:'Abre e fecha no mesmo dia' },
+      { valor:'scalp', titulo:'Scalp', sub:'Operações muito curtas, poucos pontos' },
+      { valor:'swing', titulo:'Swing', sub:'Segura de dias a poucas semanas' },
+      { valor:'posição', titulo:'Posição', sub:'Longo prazo, semanas a meses' },
+      { valor:'só estudo', titulo:'Só estudo', sub:'Sem operar, quero entender a estrutura' } ] },
+  { chave:'risco',    perg:'Quanto você aceita perder por operação?', ajuda:'Este é o número mais importante. Ele define o tamanho da posição. % do seu capital.', opcoes:[
+      { valor:0.25, titulo:'0,25%', sub:'Muito conservador' },
+      { valor:0.5,  titulo:'0,5%',  sub:'Conservador (recomendado p/ começar)' },
+      { valor:1,    titulo:'1%',    sub:'Moderado' },
+      { valor:2,    titulo:'2%',    sub:'Agressivo' },
+      { valor:3,    titulo:'3%',    sub:'Muito agressivo (risco alto)' } ] },
+  { chave:'capital',  perg:'Qual o capital da conta?', ajuda:'Serve só para calcular o risco em reais. Use conta demo primeiro.', opcoes:[
+      { valor:5000,   titulo:'R$ 5.000',   sub:'' },
+      { valor:10000,  titulo:'R$ 10.000',  sub:'' },
+      { valor:30000,  titulo:'R$ 30.000',  sub:'' },
+      { valor:50000,  titulo:'R$ 50.000',  sub:'' },
+      { valor:100000, titulo:'R$ 100.000', sub:'' } ] },
+  { chave:'vies',     perg:'Qual é a sua tese agora?', ajuda:'Vou montar o cenário a favor E o contrário, para testar seu viés.', opcoes:[
+      { valor:'alta',    titulo:'Acho que sobe (comprar)', sub:'Viés de alta' },
+      { valor:'baixa',   titulo:'Acho que cai (vender)', sub:'Viés de baixa' },
+      { valor:'lateral', titulo:'Está de lado (range)', sub:'Operar nas bordas' },
+      { valor:'nenhum',  titulo:'Não tenho opinião', sub:'Quero ver os dois lados' },
+      { valor:'contra',  titulo:'Testar minha tese contra', sub:'Quero ser questionado' } ] },
+];
+let guiaEstado = null;
+
+function iniciarGuia(){
+  guiaEstado = { passo:0, esc:{} };
+  const box = document.createElement('div');
+  box.className = 'guia';
+  box.id = 'guiaAtiva';
+  // remove guia anterior, se existir
+  const antiga = document.getElementById('guiaAtiva'); if(antiga) antiga.remove();
+  conversa.appendChild(box);
+  renderQuadro();
+  conversa.scrollTop = conversa.scrollHeight;
+}
+
+function nomeAtivo(sym){ const a = GUIA_ATIVOS.find(x=>x.symbol===sym); return a ? a.nome : sym; }
+function fmtG(v){ return v==null ? '—' : Number(v).toLocaleString('pt-BR',{maximumFractionDigits:2}); }
+
+function resumoTags(){
+  const e = guiaEstado.esc; const t = [];
+  if(e.ativo!=null)    t.push('<span class="tag">Ativo: <b>'+esc(nomeAtivo(e.ativo))+'</b></span>');
+  if(e.tempo!=null)    t.push('<span class="tag">Gráfico: <b>'+esc(e.tempo)+'</b></span>');
+  if(e.objetivo!=null) t.push('<span class="tag">Objetivo: <b>'+esc(e.objetivo)+'</b></span>');
+  if(e.risco!=null)    t.push('<span class="tag">Risco: <b>'+String(e.risco).replace('.',',')+'%</b></span>');
+  if(e.capital!=null)  t.push('<span class="tag">Capital: <b>R$ '+e.capital.toLocaleString('pt-BR')+'</b></span>');
+  if(e.vies!=null)     t.push('<span class="tag">Tese: <b>'+esc(e.vies)+'</b></span>');
+  return t.length ? '<div class="resumo">'+t.join('')+'</div>' : '';
+}
+
+function renderQuadro(){
+  const box = document.getElementById('guiaAtiva'); if(!box) return;
+  const i = guiaEstado.passo;
+  if(i >= GUIA_PASSOS.length){ montarPainelFinal(); return; }
+  const p = GUIA_PASSOS[i];
+  const total = GUIA_PASSOS.length;
+  const pct = Math.round((i/total)*100);
+  const opcoes = p.opcoes.map((o,idx) =>
+    '<button class="opcao" onclick="escolherGuia('+idx+')">'
+    + '<span class="titulo"><span class="num">'+(idx+1)+'.</span>'+esc(o.titulo)+'</span>'
+    + (o.sub ? '<span class="sub">'+esc(o.sub)+'</span>' : '') + '</button>').join('');
+  box.innerHTML =
+    '<div class="quadro">'
+    + '<div class="passo">Quadro '+(i+1)+' de '+total+' <span class="barra"><i style="width:'+pct+'%"></i></span></div>'
+    + resumoTags()
+    + '<h3 class="perg">'+esc(p.perg)+'</h3>'
+    + '<p class="ajuda">'+esc(p.ajuda)+'</p>'
+    + '<div class="opcoes">'+opcoes+'</div>'
+    + '<div class="navg">'
+    + (i>0 ? '<button class="voltar" onclick="voltarGuia()">← Voltar</button>' : '')
+    + '<button class="voltar" onclick="cancelarGuia()">Cancelar</button>'
+    + '</div></div>';
+  conversa.scrollTop = conversa.scrollHeight;
+}
+
+function escolherGuia(idx){
+  const p = GUIA_PASSOS[guiaEstado.passo];
+  guiaEstado.esc[p.chave] = p.opcoes[idx].valor;
+  guiaEstado.passo++;
+  renderQuadro();
+}
+function voltarGuia(){ if(guiaEstado.passo>0){ guiaEstado.passo--; renderQuadro(); } }
+function cancelarGuia(){ const b = document.getElementById('guiaAtiva'); if(b) b.remove(); guiaEstado = null; }
+
+async function montarPainelFinal(){
+  const box = document.getElementById('guiaAtiva'); if(!box) return;
+  const e = guiaEstado.esc;
+  box.innerHTML = '<div class="quadro">'+resumoTags()+'<div class="carregando">🔎 Buscando dados reais do ativo (preço, topo e fundo)…</div></div>';
+  let dados = null;
+  try {
+    const r = await fetch('/api/ativo?symbol='+encodeURIComponent(e.ativo));
+    if(r.ok) dados = await r.json();
+  } catch(_){}
+  const total = GUIA_PASSOS.length;
+
+  if(!dados || dados.preco==null || dados.topo==null || dados.fundo==null){
+    box.innerHTML = '<div class="quadro">'
+      + '<div class="passo">Quadro '+(total+1)+' de '+(total+1)+' · painel</div>'
+      + resumoTags()
+      + '<h3 class="perg">Não consegui os dados reais deste ativo agora</h3>'
+      + '<p class="ajuda">A fonte de cotação pode estar indisponível ou com atraso. Você pode tentar de novo ou enviar as faixas de topo/fundo manualmente no chat.</p>'
+      + '<div class="navg"><button class="primario" onclick="montarPainelFinal()">Tentar de novo</button>'
+      + '<button class="voltar" onclick="cancelarGuia()">Fechar</button></div></div>';
+    return;
+  }
+
+  const P = dados.preco, T = dados.topo, F = dados.fundo;
+  const range = Math.max(T - F, 1e-9);
+  const posPct = Math.min(100, Math.max(0, ((P - F) / range) * 100));
+  const riscoReais = e.capital * (e.risco/100);
+  const margem = range * 0.10; // folga de invalidação = 10% do range
+
+  // Define entrada/invalidação/alvo conforme a tese
+  let lado, entrada, invalid, alvo, obs;
+  if(e.vies === 'baixa'){
+    lado='Venda (estudo)'; entrada=P; invalid=T+margem; alvo=F; obs='Tese de baixa: a ideia morre se romper o topo do período.';
+  } else if(e.vies === 'lateral'){
+    lado='Operar nas bordas (estudo)'; entrada=F+range*0.05; invalid=F-margem; alvo=T-range*0.05; obs='Range: comprar perto do fundo, vender perto do topo. Fora das bordas, não há trade.';
+  } else {
+    lado='Compra (estudo)'; entrada=P; invalid=F-margem; alvo=T; obs=(e.vies==='alta') ? 'Tese de alta: a ideia morre se perder o fundo do período.' : 'Sem viés definido: usei o cenário comprado como base — leia também o cenário contrário abaixo.';
+  }
+  const distancia = Math.abs(entrada - invalid);
+  const ganho = Math.abs(alvo - entrada);
+  const rr = distancia>0 ? (ganho/distancia) : null;
+  const unidades = distancia>0 ? Math.floor(riscoReais / distancia) : 0; // spot: 1 unidade = 1 ponto de moeda
+
+  const linha = (a,b) => '<div class="linha"><span>'+esc(a)+'</span><span>'+b+'</span></div>';
+  const pctTxt = posPct.toFixed(0)+'% do range (0%=fundo, 100%=topo)';
+
+  box.innerHTML = '<div class="quadro painelfinal">'
+    + '<div class="passo">Painel montado · '+esc(nomeAtivo(e.ativo))+' · '+esc(e.tempo)+'</div>'
+    + resumoTags()
+    + '<h3>1 · Onde o preço está (dados reais, ~'+dados.pregoes+' pregões)</h3>'
+    + linha('Preço atual', fmtG(P))
+    + linha('Topo do período (resistência)', fmtG(T))
+    + linha('Fundo do período (suporte)', fmtG(F))
+    + linha('Posição no range', pctTxt)
+    + '<h3>2 · Plano hipotético ('+esc(lado)+')</h3>'
+    + linha('Entrada', fmtG(entrada))
+    + linha('Invalidação (onde a tese morre)', fmtG(invalid))
+    + linha('Alvo', fmtG(alvo))
+    + linha('Distância até a invalidação', fmtG(distancia)+' pts')
+    + linha('Relação risco : retorno', rr!=null ? '1 : '+rr.toFixed(2)+(rr<1?'  ⚠️ arrisca mais do que ganha':'') : '—')
+    + '<h3>3 · Tamanho da posição (a conta que importa)</h3>'
+    + linha('Risco por operação', 'R$ '+riscoReais.toLocaleString('pt-BR',{maximumFractionDigits:2})+'  ('+String(e.risco).replace('.',',')+'%)')
+    + linha('Tamanho compatível', unidades>0 ? '≈ '+unidades.toLocaleString('pt-BR')+' unidade(s) de risco' : 'não cabe no seu risco')
+    + '<p class="ajuda">⚠️ Em futuros (WIN/WDO) multiplique pelo valor do ponto do contrato — ex.: no WIN 1 ponto = R$ 0,20 por contrato. Estas faixas vêm da máxima/mínima reais do período; o preço tem ~15min de atraso.</p>'
+    + '<h3>4 · Cenário contrário (teste o seu viés)</h3>'
+    + '<p class="ajuda">'+esc(obs)+' Se '+(e.vies==='baixa'?'romper e sustentar acima do topo':'perder e sustentar abaixo do fundo')+', a tese está errada — saia, não teime.</p>'
+    + '<div class="navg">'
+    + '<button class="primario" onclick="aprofundarComIA()">💬 Aprofundar com a IA</button>'
+    + '<button onclick="iniciarGuia()">🔄 Novo painel</button>'
+    + '<button class="voltar" onclick="cancelarGuia()">Fechar</button>'
+    + '</div>'
+    + '<p class="ajuda">Conteúdo educacional. Não é recomendação de investimento (Resolução CVM 20/2021).</p>'
+    + '</div>';
+  conversa.scrollTop = conversa.scrollHeight;
+}
+
+function aprofundarComIA(){
+  const e = guiaEstado.esc;
+  const msg = '/painel-trade ' + nomeAtivo(e.ativo) + ' ' + e.tempo
+    + ', objetivo ' + e.objetivo
+    + ', capital R$ ' + e.capital.toLocaleString('pt-BR')
+    + ', risco ' + String(e.risco).replace('.',',') + '% por operação'
+    + ', minha tese: ' + e.vies
+    + '. Use as faixas de topo/fundo reais do ativo que o painel já mostrou e aprofunde os cenários base, alternativo e contrário.';
+  campo.value = msg;
+  campo.focus();
+  enviar();
+}
 </script>
 </body>
 </html>
