@@ -58,20 +58,28 @@ function log(nivel, ...args) {
 }
 
 // ---------- Rate limit simples por IP ----------
-const janelas = new Map();
-function limitar(req, res, next) {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip;
-  const agora = Date.now();
-  const recentes = (janelas.get(ip) || []).filter((t) => agora - t < 60_000);
-  if (recentes.length >= RATE_LIMIT) return res.status(429).json({ erro: 'Muitas requisições. Aguarde um minuto.' });
-  recentes.push(agora);
-  janelas.set(ip, recentes);
-  next();
+/** Cria um middleware de limite por IP com janela de 1 minuto e contador próprio. */
+function criarLimitador(maxPorMinuto) {
+  const janelas = new Map();
+  setInterval(() => {
+    const corte = Date.now() - 60_000;
+    for (const [ip, j] of janelas) { const vivos = j.filter((t) => t > corte); if (vivos.length) janelas.set(ip, vivos); else janelas.delete(ip); }
+  }, 5 * 60_000).unref();
+  return function (req, res, next) {
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip;
+    const agora = Date.now();
+    const recentes = (janelas.get(ip) || []).filter((t) => agora - t < 60_000);
+    if (recentes.length >= maxPorMinuto) return res.status(429).json({ erro: 'Muitas requisições. Aguarde um minuto.' });
+    recentes.push(agora);
+    janelas.set(ip, recentes);
+    next();
+  };
 }
-setInterval(() => {
-  const corte = Date.now() - 60_000;
-  for (const [ip, j] of janelas) { const vivos = j.filter((t) => t > corte); if (vivos.length) janelas.set(ip, vivos); else janelas.delete(ip); }
-}, 5 * 60_000).unref();
+const limitar = criarLimitador(RATE_LIMIT);
+// Rotas que consomem cota de terceiros a cada chamada (Yahoo, Finnhub, FRED, brapi).
+const limitarDados = criarLimitador(Math.max(10, RATE_LIMIT * 2));
+// Busca da Exa: cobrada por requisição, então o limite é bem menor.
+const limitarBusca = criarLimitador(Math.max(3, Math.ceil(RATE_LIMIT / 4)));
 
 // ---------- Senha única opcional ----------
 function exigirSenha(req, res, next) {
@@ -151,7 +159,8 @@ function podarAnexosAntigos(historico) {
 // ---------- Rotas ----------
 app.get('/api/saude', (_req, res) => res.json({
   ok: true, chave: !!client, modelo: MODEL, modeloValido, effort: EFFORT, senha: !!SENHA_ACESSO, codigos: CODIGOS_TRADER.length,
-  finnhub: !!FINNHUB_KEY, fred: !!FRED_KEY, // conferir depois do deploy se as Variables chegaram
+  // conferir depois do deploy se as Variables chegaram
+  finnhub: !!FINNHUB_KEY, fred: !!FRED_KEY, brapi: !!BRAPI_KEY, exa: !!EXA_KEY,
 }));
 
 app.get('/api/codigos', (_req, res) => res.json({
@@ -313,7 +322,7 @@ async function fetchCotacoes(simbolos) {
   return { quoteResponse: { result } };
 }
 
-app.get('/api/cotacoes', async (req, res) => {
+app.get('/api/cotacoes', limitarDados, async (req, res) => {
   try {
     const forcar = /^(1|true|sim)$/i.test(String(req.query.force || ''));
     const agora = Date.now();
@@ -381,7 +390,7 @@ function fetchAtivoDetalhe(simbolo) {
 }
 
 const _ativoCache = new Map(); // symbol -> { data, ts }
-app.get('/api/ativo', async (req, res) => {
+app.get('/api/ativo', limitarDados, async (req, res) => {
   const simbolo = String(req.query.symbol || '').trim();
   if (!simbolo) return res.status(400).json({ erro: 'Informe ?symbol=' });
   try {
@@ -437,6 +446,38 @@ function fetchJson(url, { timeout = 8000, headers = {} } = {}) {
   });
 }
 
+// Helper genérico: POST JSON com timeout. Usado pela Exa, que só aceita POST.
+function postJson(url, corpo, { timeout = 15_000, headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(corpo);
+    const u = new URL(url);
+    const r = https.request({
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: {
+        'User-Agent': 'agente-trader',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        ...headers,
+      },
+      timeout,
+    }, (resp) => {
+      let data = '';
+      resp.on('data', (c) => { data += c; });
+      resp.on('end', () => {
+        if (resp.statusCode < 200 || resp.statusCode >= 300) return reject(new Error(`HTTP ${resp.statusCode}`));
+        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+      });
+    });
+    r.on('timeout', () => { r.destroy(); reject(new Error('timeout')); });
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+}
+
 // Cache em memória simples (por chave) para não estourar os limites das APIs.
 const _euaCache = new Map(); // chave -> { data, ts }
 function cacheGet(chave, ttl, forcar) {
@@ -444,7 +485,15 @@ function cacheGet(chave, ttl, forcar) {
   const c = _euaCache.get(chave);
   return c && Date.now() - c.ts < ttl ? c.data : null;
 }
-function cacheSet(chave, data) { _euaCache.set(chave, { data, ts: Date.now() }); }
+// Teto de entradas: /api/br/noticias usa uma chave por ticker, então sem isso um
+// caller poderia inflar o Map indefinidamente variando o símbolo.
+const MAX_CACHE_ENTRADAS = 200;
+function cacheSet(chave, data) {
+  if (!_euaCache.has(chave) && _euaCache.size >= MAX_CACHE_ENTRADAS) {
+    _euaCache.delete(_euaCache.keys().next().value); // Map mantém ordem de inserção: sai a mais antiga
+  }
+  _euaCache.set(chave, { data, ts: Date.now() });
+}
 function ehForce(req) { return /^(1|true|sim)$/i.test(String(req.query.force || '')); }
 
 // ---------- Cotações de ações dos EUA (Finnhub) ----------
@@ -463,7 +512,7 @@ async function fetchAcaoEUA(a) {
   return { symbol: a.symbol, nome: a.nome, preco: j.c, variacao: j.dp, anterior: j.pc, alta: j.h, baixa: j.l };
 }
 
-app.get('/api/eua/cotacoes', async (req, res) => {
+app.get('/api/eua/cotacoes', limitarDados, async (req, res) => {
   if (faltaChave(FINNHUB_KEY, 'FINNHUB_API_KEY', res)) return;
   const forcar = ehForce(req);
   const cache = cacheGet('acoes', 30_000, forcar);
@@ -496,7 +545,7 @@ async function fetchNoticiasEUA() {
   })).filter((n) => n.titulo && n.url);
 }
 
-app.get('/api/eua/noticias', async (req, res) => {
+app.get('/api/eua/noticias', limitarDados, async (req, res) => {
   if (faltaChave(FINNHUB_KEY, 'FINNHUB_API_KEY', res)) return;
   const forcar = ehForce(req);
   const cache = cacheGet('noticias', 300_000, forcar); // 5 min
@@ -530,7 +579,7 @@ async function fetchIndicadorFred(s) {
   return { id: s.id, nome: s.nome, valor: Number(o.value), data: o.date, sufixo: s.sufixo };
 }
 
-app.get('/api/eua/indicadores', async (req, res) => {
+app.get('/api/eua/indicadores', limitarDados, async (req, res) => {
   if (faltaChave(FRED_KEY, 'FRED_API_KEY', res)) return;
   const forcar = ehForce(req);
   const cache = cacheGet('indicadores', 3_600_000, forcar); // 1 h
@@ -551,6 +600,107 @@ app.get('/api/eua/indicadores', async (req, res) => {
   }
 });
 
+// ============================================================
+// PAINEL BRASIL — cotações da B3 (brapi) e notícias por ativo (Exa)
+// Rotas independentes do Yahoo: /api/cotacoes e /api/ativo seguem intactos.
+// Mesmo padrão do painel EUA: chaves só do ambiente, cache em memória, 503 sem chave.
+// ============================================================
+const BRAPI_KEY = (process.env.BRAPI_API_KEY || '').trim();
+const EXA_KEY = (process.env.EXA_API_KEY || '').trim();
+
+const ACOES_BR = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'ABEV3', 'B3SA3', 'WEGE3', 'MGLU3'];
+
+// Uma requisição por ticker: o plano free da brapi recusa lote ("no máximo 1 ativo
+// por requisição", HTTP 400 QUOTES_PER_REQUEST_EXCEEDED). Mesmo desenho do Finnhub.
+async function fetchAcaoBR(ticker) {
+  const j = await fetchJson(
+    `https://brapi.dev/api/quote/${encodeURIComponent(ticker)}?token=${encodeURIComponent(BRAPI_KEY)}`,
+    { timeout: 15_000 },
+  );
+  const q = j && j.results && j.results[0];
+  if (!q || q.regularMarketPrice == null) throw new Error(`sem dados para ${ticker}`);
+  return {
+    symbol: q.symbol || ticker,
+    nome: q.longName || q.shortName || ticker,
+    preco: q.regularMarketPrice,
+    variacao: q.regularMarketChangePercent,
+    anterior: q.regularMarketPreviousClose,
+    alta: q.regularMarketDayHigh,
+    baixa: q.regularMarketDayLow,
+    moeda: q.currency || 'BRL',
+  };
+}
+
+async function fetchAcoesBR() {
+  const resultados = await Promise.allSettled(ACOES_BR.map((t) => fetchAcaoBR(t)));
+  const result = resultados.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  if (!result.length) throw new Error('nenhuma cotação BR disponível');
+  return result;
+}
+
+app.get('/api/br/cotacoes', limitarDados, async (req, res) => {
+  if (faltaChave(BRAPI_KEY, 'BRAPI_API_KEY', res)) return;
+  const forcar = ehForce(req);
+  const cache = cacheGet('br-acoes', 60_000, forcar);
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=60'); return res.json(cache); }
+  try {
+    const data = { result: await fetchAcoesBR() };
+    cacheSet('br-acoes', data);
+    res.setHeader('Cache-Control', forcar ? 'no-store' : 'public, max-age=60');
+    res.json(data);
+  } catch (e) {
+    log('erro', 'br/cotacoes:', e.message);
+    const c = _euaCache.get('br-acoes');
+    if (c) { res.setHeader('Cache-Control', 'public, max-age=10'); return res.json(c.data); }
+    res.status(502).json({ erro: 'Falha ao buscar cotações da B3.' });
+  }
+});
+
+// ---------- Notícias de um ativo específico (Exa) ----------
+const DIAS_NOTICIA = 14; // janela de publicação considerada "recente"
+
+async function fetchNoticiasAtivo(ticker) {
+  const desde = new Date(Date.now() - DIAS_NOTICIA * 24 * 60 * 60 * 1000).toISOString();
+  const j = await postJson('https://api.exa.ai/search', {
+    query: `notícias recentes sobre a empresa e a ação ${ticker} na bolsa brasileira`,
+    category: 'news',
+    numResults: 10,
+    startPublishedDate: desde,
+    contents: { text: { maxCharacters: 400 } },
+  }, { timeout: 25_000, headers: { 'x-api-key': EXA_KEY } });
+  const itens = (j && j.results) || [];
+  return itens.map((n) => ({
+    titulo: n.title,
+    resumo: (n.text || '').trim().slice(0, 300) || null,
+    fonte: n.author || (() => { try { return new URL(n.url).hostname.replace(/^www\./, ''); } catch (_) { return null; } })(),
+    url: n.url,
+    data: n.publishedDate ? Date.parse(n.publishedDate) || null : null,
+    imagem: n.image || null,
+  })).filter((n) => n.titulo && n.url);
+}
+
+app.get('/api/br/noticias', limitarBusca, async (req, res) => {
+  if (faltaChave(EXA_KEY, 'EXA_API_KEY', res)) return;
+  // Ticker curto e alfanumérico: evita mandar texto livre do usuário para a Exa.
+  const ticker = String(req.query.symbol || '').trim().toUpperCase();
+  if (!/^[A-Z0-9.\-]{2,12}$/.test(ticker)) return res.status(400).json({ erro: 'Informe ?symbol= com um ticker válido (ex.: PETR4).' });
+  const forcar = ehForce(req);
+  const chave = `br-news:${ticker}`;
+  const cache = cacheGet(chave, 900_000, forcar); // 15 min por ativo
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=900'); return res.json(cache); }
+  try {
+    const data = { ticker, result: await fetchNoticiasAtivo(ticker) };
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', forcar ? 'no-store' : 'public, max-age=900');
+    res.json(data);
+  } catch (e) {
+    log('erro', `br/noticias ${ticker}:`, e.message);
+    const c = _euaCache.get(chave);
+    if (c) { res.setHeader('Cache-Control', 'public, max-age=30'); return res.json(c.data); }
+    res.status(502).json({ erro: 'Falha ao buscar notícias do ativo.' });
+  }
+});
+
 app.get('/robots.txt', (_req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
 app.use('/api', (_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
 
@@ -560,6 +710,8 @@ if (require.main === module) {
     if (!client) console.warn('ANTHROPIC_API_KEY ausente: o site abre, mas o chat responde 503.');
     if (!FINNHUB_KEY) console.warn('FINNHUB_API_KEY ausente: /api/eua/cotacoes e /api/eua/noticias respondem 503.');
     if (!FRED_KEY) console.warn('FRED_API_KEY ausente: /api/eua/indicadores responde 503.');
+    if (!BRAPI_KEY) console.warn('BRAPI_API_KEY ausente: /api/br/cotacoes responde 503.');
+    if (!EXA_KEY) console.warn('EXA_API_KEY ausente: /api/br/noticias responde 503.');
     validarModelo();
   });
 }

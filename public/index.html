@@ -111,6 +111,14 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
 .eua-news .tit{font-size:.9rem;font-weight:600;line-height:1.3}
 .eua-news .meta{font-size:.72rem;color:#3a4a60;margin-top:4px}
 .eua-vazio{color:var(--texto2);font-size:.85rem;padding:6px 0}
+/* --- Painel Brasil: reaproveita as classes .eua-* acima; só a busca por ticker é nova --- */
+#modalBR .caixa{max-width:820px;width:min(94vw,820px);max-height:88vh;overflow:auto;text-align:left}
+#modalBR h2{display:flex;align-items:center;gap:8px}
+.br-busca{display:flex;gap:8px;margin-bottom:10px}
+.br-busca input{flex:1;background:#0d1626;border:1px solid var(--borda);color:var(--texto);border-radius:8px;padding:8px 10px;font-size:.9rem;text-transform:uppercase}
+.br-busca input:focus{outline:none;border-color:var(--acento)}
+.br-busca button{background:var(--acento);border:none;color:#fff;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:.88rem}
+.br-busca button:hover{filter:brightness(1.1)}
 /* --- Faixa de destaque para o Painel guiado --- */
 #cta-guia{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:linear-gradient(90deg,rgba(47,123,255,.12),rgba(25,200,165,.12));border-bottom:1px solid var(--borda)}
 #cta-guia button{font-size:.95rem;padding:9px 18px;box-shadow:0 0 0 3px rgba(47,123,255,.18)}
@@ -158,6 +166,7 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
     <span title="Estado do servidor"><span class="luz" id="luz"></span><span id="estado" style="font-size:.8rem;color:var(--texto2)">verificando…</span></span>
     <button class="primario" onclick="iniciarGuia()" title="Monta o painel passo a passo: você só escolhe entre as opções sugeridas">🧭 Painel guiado</button>
     <button onclick="abrirEUA()" title="Notícias, indicadores macro e ações dos EUA, ao vivo">🇺🇸 EUA</button>
+    <button onclick="abrirBR()" title="Ações da B3 e notícias por ativo, ao vivo">🇧🇷 Brasil</button>
     <button id="abrirLateral" onclick="document.getElementById('lateral').classList.toggle('aberto')">📋 Códigos</button>
     <button onclick="limparConversa()" title="Começa uma conversa nova">🗑 Nova conversa</button>
   </div>
@@ -224,6 +233,27 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
   </div>
 </div>
 
+<div class="modal" id="modalBR">
+  <div class="caixa">
+    <h2>🇧🇷 Painel Brasil <button class="eua-fechar" onclick="fecharBR()">Fechar ✕</button></h2>
+    <div class="eua-sec">
+      <div class="eua-cab"><h3>💹 Ações da B3</h3><span class="eua-ts" id="br-acoes-ts"></span>
+        <button class="eua-refresh" id="br-acoes-btn" title="Atualizar agora" onclick="carregarAcoesBR(true)">🔄</button></div>
+      <div class="eua-grid" id="br-acoes"><span class="eua-vazio">carregando…</span></div>
+    </div>
+    <div class="eua-sec">
+      <div class="eua-cab"><h3>📰 Notícias do ativo</h3><span class="eua-ts" id="br-news-ts"></span>
+        <button class="eua-refresh" id="br-news-btn" title="Buscar agora" onclick="carregarNoticiasBR(true)">🔄</button></div>
+      <div class="br-busca">
+        <input id="br-ticker" value="PETR4" maxlength="12" placeholder="Ticker (ex.: PETR4)"
+               onkeydown="if(event.key==='Enter')carregarNoticiasBR(true)">
+        <button onclick="carregarNoticiasBR(true)">Buscar</button>
+      </div>
+      <div class="eua-news" id="br-news"><span class="eua-vazio">carregando…</span></div>
+    </div>
+  </div>
+</div>
+
 <script>
 const VERSAO = '1.0.0';
 const SAUDACAO = 'AGENTE TRADER online. 100 códigos de análise carregados.\n\n**Não sabe por onde começar? Clique em 🧭 Painel guiado** (no topo). Eu monto o painel passo a passo: você só escolhe entre as opções que eu sugiro, e eu uso o preço, o topo e o fundo REAIS do ativo. Nada de digitar dados soltos.\n\n— Prefere o modo livre? Digite um código com o **ativo**, o **tempo gráfico** e o **objetivo** (ex.: `/painel-trade`).\n— Para revisar o dia: `/diario-trade`. Para checar o emocional antes de operar: `/check-emocional`.';
@@ -237,7 +267,15 @@ let senha = '';
 try { senha = localStorage.getItem('trader.senha') || ''; } catch (_) {}
 
 // ---------- Markdown mínimo (##, ###, **, `código`, listas com — ou -, links) ----------
-function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Escapa também aspas: este esc() é usado dentro de atributos HTML (href, title),
+// onde só < e > não bastam para impedir quebra de atributo.
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+// URLs vindas de API externa (Finnhub, Exa) só viram link se forem http(s):
+// bloqueia javascript:, data: e afins. Devolve null quando não é segura.
+function hrefSeguro(u){
+  try { const x = new URL(String(u)); return (x.protocol === 'http:' || x.protocol === 'https:') ? x.href : null; }
+  catch(_){ return null; }
+}
 function inline(s){
   return esc(s)
     .replace(/`([^`]+)`/g,'<code>$1</code>')
@@ -461,6 +499,7 @@ setInterval(atualizarCotacoes, 60_000);
 
 // ---------- Painel EUA (notícias, indicadores e ações) ----------
 const fmtUS = (v) => v == null ? '—' : 'US$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+const fmtBRL = (v) => v == null ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
 const horaAgora = () => new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
 let euaCarregado = false;
 
@@ -527,14 +566,78 @@ async function carregarNoticiasEUA(forcar){
     const itens = (d && d.result) || [];
     if(!itens.length){ alvo.innerHTML = '<span class="eua-vazio">Sem notícias no momento.</span>'; return; }
     alvo.innerHTML = itens.map(n => {
+      const href = hrefSeguro(n.url);
+      if(!href) return '';
       const quando = n.data ? new Date(n.data).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
-      return '<a href="' + esc(n.url) + '" target="_blank" rel="noopener">'
+      return '<a href="' + esc(href) + '" target="_blank" rel="noopener">'
         + '<div class="tit">' + esc(n.titulo) + '</div>'
         + '<div class="meta">' + esc(n.fonte || '') + (quando ? ' · ' + quando : '') + '</div></a>';
     }).join('');
     document.getElementById('eua-news-ts').textContent = 'atualizado ' + horaAgora();
   } catch(_){ alvo.innerHTML = '<span class="eua-vazio">Falha ao carregar notícias.</span>'; }
   finally { _spin('eua-news-btn', false); }
+}
+
+// ================= Painel Brasil (B3 via brapi, notícias do ativo via Exa) =================
+// Mesmo desenho do painel EUA e mesmas classes de estilo. As notícias são por ativo:
+// o usuário escolhe/digita o ticker e a busca vai para /api/br/noticias?symbol=...
+let brCarregado = false;
+
+function abrirBR(){
+  document.getElementById('modalBR').classList.add('aberto');
+  if(!brCarregado){
+    brCarregado = true;
+    carregarAcoesBR(false);
+    carregarNoticiasBR(false);
+  }
+}
+function fecharBR(){ document.getElementById('modalBR').classList.remove('aberto'); }
+
+async function carregarAcoesBR(forcar){
+  _spin('br-acoes-btn', true);
+  const alvo = document.getElementById('br-acoes');
+  try {
+    const r = await fetch('/api/br/cotacoes' + (forcar ? '?force=1' : ''));
+    const d = await r.json();
+    const itens = (d && d.result) || [];
+    if(!itens.length){ alvo.innerHTML = '<span class="eua-vazio">' + esc((d && d.erro) || 'Sem dados no momento.') + '</span>'; return; }
+    alvo.innerHTML = itens.map(q => {
+      const chg = q.variacao;
+      const cls = chg == null ? '' : chg >= 0 ? 'alta' : 'baixa';
+      const sinal = chg == null ? '' : chg >= 0 ? '▲' : '▼';
+      const varTxt = chg != null ? sinal + Math.abs(chg).toFixed(2) + '%' : '';
+      return '<div class="eua-card" title="' + esc(q.nome) + '"><div class="n">' + esc(q.symbol) + '</div>'
+        + '<div class="p">' + fmtBRL(q.preco) + '</div>'
+        + (varTxt ? '<div class="v ' + cls + '">' + varTxt + '</div>' : '') + '</div>';
+    }).join('');
+    document.getElementById('br-acoes-ts').textContent = 'atualizado ' + horaAgora();
+  } catch(_){ alvo.innerHTML = '<span class="eua-vazio">Falha ao carregar cotações da B3.</span>'; }
+  finally { _spin('br-acoes-btn', false); }
+}
+
+async function carregarNoticiasBR(forcar){
+  const campo = document.getElementById('br-ticker');
+  const ticker = (campo.value || 'PETR4').trim().toUpperCase();
+  campo.value = ticker;
+  _spin('br-news-btn', true);
+  const alvo = document.getElementById('br-news');
+  alvo.innerHTML = '<span class="eua-vazio">buscando notícias de ' + esc(ticker) + '…</span>';
+  try {
+    const r = await fetch('/api/br/noticias?symbol=' + encodeURIComponent(ticker) + (forcar ? '&force=1' : ''));
+    const d = await r.json();
+    const itens = (d && d.result) || [];
+    if(!itens.length){ alvo.innerHTML = '<span class="eua-vazio">' + esc((d && d.erro) || ('Sem notícias recentes de ' + ticker + '.')) + '</span>'; return; }
+    alvo.innerHTML = itens.map(n => {
+      const href = hrefSeguro(n.url);
+      if(!href) return '';
+      const quando = n.data ? new Date(n.data).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '';
+      return '<a href="' + esc(href) + '" target="_blank" rel="noopener">'
+        + '<div class="tit">' + esc(n.titulo) + '</div>'
+        + '<div class="meta">' + esc(n.fonte || '') + (quando ? ' · ' + quando : '') + '</div></a>';
+    }).join('');
+    document.getElementById('br-news-ts').textContent = ticker + ' · ' + horaAgora();
+  } catch(_){ alvo.innerHTML = '<span class="eua-vazio">Falha ao carregar notícias.</span>'; }
+  finally { _spin('br-news-btn', false); }
 }
 
 // ================= Painel guiado (quadros numerados, 1 escolha por vez) =================
