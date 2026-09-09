@@ -486,7 +486,9 @@ app.get('/api/eua/cotacoes', async (req, res) => {
 
 // ---------- Notícias dos EUA (Finnhub) ----------
 async function fetchNoticiasEUA() {
-  const j = await fetchJson(`https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_KEY}`);
+  // Timeout maior que o padrão: esta resposta passa de 60KB e já foi medida entre
+  // 3s e 16s em produção; com os 8s padrão a rota falhava de forma intermitente.
+  const j = await fetchJson(`https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_KEY}`, { timeout: 25_000 });
   if (!Array.isArray(j)) throw new Error('resposta de notícias inválida');
   return j.slice(0, 15).map((n) => ({
     titulo: n.headline, resumo: n.summary, fonte: n.source, url: n.url,
