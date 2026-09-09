@@ -260,26 +260,75 @@ app.post('/api/chat', limitar, exigirSenha, async (req, res) => {
 const https = require('https');
 const SIMBOLOS_COTACOES = ['^BVSP', 'USDBRL=X', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
 
-app.get('/api/cotacoes', (_req, res) => {
-  const simbolos = SIMBOLOS_COTACOES.join(',');
-  const url = `https://query1.finance.yahoo.com/v8/finance/quote?symbols=${encodeURIComponent(simbolos)}&fields=regularMarketPrice,regularMarketChangePercent,shortName,marketState`;
-  const opts = { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, timeout: 8000 };
-  let respondeu = false;
-  const req2 = https.get(url, opts, (r) => {
-    let data = '';
-    r.on('data', (c) => { data += c; });
-    r.on('end', () => {
-      if (respondeu) return; respondeu = true;
-      try {
-        res.setHeader('Cache-Control', 'public, max-age=55');
-        res.json(JSON.parse(data));
-      } catch {
-        res.status(502).json({ erro: 'Falha ao processar cotações.' });
-      }
+// Cache em memória para não bater na API a cada requisição
+let _cotCache = null;
+let _cotCacheTs = 0;
+const COT_TTL = 55_000; // 55 segundos
+
+function fetchYahoo(simbolos) {
+  return new Promise((resolve, reject) => {
+    // Passo 1: pegar crumb + cookie
+    const crumbOpts = {
+      hostname: 'query2.finance.yahoo.com',
+      path: '/v1/test/getcrumb',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+        'Accept': 'text/plain',
+        'Cookie': 'A1=d=AQABBM; A3=d=AQABBM',
+      },
+      timeout: 8000,
+    };
+    const r1 = https.get(crumbOpts, (res1) => {
+      let crumb = '';
+      res1.on('data', (c) => { crumb += c; });
+      res1.on('end', () => {
+        crumb = crumb.trim();
+        const cookie = (res1.headers['set-cookie'] || []).join('; ');
+        // Passo 2: buscar cotações com o crumb
+        const qs = `symbols=${encodeURIComponent(simbolos)}&crumb=${encodeURIComponent(crumb)}&fields=regularMarketPrice,regularMarketChangePercent,shortName,marketState`;
+        const q2opts = {
+          hostname: 'query1.finance.yahoo.com',
+          path: `/v7/finance/quote?${qs}`,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+            'Accept': 'application/json',
+            'Cookie': cookie || 'A1=d=AQABBM; A3=d=AQABBM',
+          },
+          timeout: 8000,
+        };
+        const r2 = https.get(q2opts, (res2) => {
+          let data = '';
+          res2.on('data', (c) => { data += c; });
+          res2.on('end', () => {
+            try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+          });
+        });
+        r2.on('timeout', () => { r2.destroy(); reject(new Error('timeout quotes')); });
+        r2.on('error', reject);
+      });
     });
+    r1.on('timeout', () => { r1.destroy(); reject(new Error('timeout crumb')); });
+    r1.on('error', reject);
   });
-  req2.on('timeout', () => { req2.destroy(); if (!respondeu) { respondeu = true; res.status(504).json({ erro: 'Timeout ao buscar cotações.' }); } });
-  req2.on('error', () => { if (!respondeu) { respondeu = true; res.status(502).json({ erro: 'Falha ao buscar cotações.' }); } });
+}
+
+app.get('/api/cotacoes', async (_req, res) => {
+  try {
+    const agora = Date.now();
+    if (_cotCache && agora - _cotCacheTs < COT_TTL) {
+      res.setHeader('Cache-Control', 'public, max-age=55');
+      return res.json(_cotCache);
+    }
+    const data = await fetchYahoo(SIMBOLOS_COTACOES.join(','));
+    _cotCache = data;
+    _cotCacheTs = Date.now();
+    res.setHeader('Cache-Control', 'public, max-age=55');
+    res.json(data);
+  } catch (e) {
+    log('erro', 'cotacoes:', e.message);
+    if (_cotCache) { res.setHeader('Cache-Control', 'public, max-age=10'); return res.json(_cotCache); }
+    res.status(502).json({ erro: 'Falha ao buscar cotações.' });
+  }
 });
 
 app.get('/robots.txt', (_req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
