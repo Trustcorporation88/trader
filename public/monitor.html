@@ -101,6 +101,25 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
 .form-alerta input,.form-alerta select{width:100%}
 .form-alerta .cheio{grid-column:1/-1}
 .nota{font-size:.74rem;color:var(--apagado);margin-top:8px}
+.barra-grafico{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 8px}
+.barra-grafico .periodos{margin:0}
+.modo-grafico{margin-left:auto;display:flex;gap:0}
+.modo-grafico button{padding:4px 10px;font-size:.78rem;background:transparent;border-radius:0}
+.modo-grafico button:first-child{border-radius:8px 0 0 8px}
+.modo-grafico button:last-child{border-radius:0 8px 8px 0;border-left:0}
+.modo-grafico button.ativo{background:var(--painel2);color:var(--laranja);border-color:var(--laranja)}
+.tv-ativo{height:460px;border-radius:10px;overflow:hidden}
+.tv-ativo .tradingview-widget-container,.tv-ativo .tradingview-widget-container__widget{height:100%;width:100%}
+.sync-estado{display:flex;align-items:center;gap:8px;font-size:.86rem;margin-bottom:10px}
+.luz{width:9px;height:9px;border-radius:50%;background:#555;flex:none}
+.luz.ok{background:var(--acento2);box-shadow:0 0 8px var(--acento2)}
+.luz.aviso{background:var(--alerta)}
+.luz.falha{background:var(--erro)}
+.sync-bloco{margin-top:10px}
+.sync-bloco label{display:block;font-size:.78rem;color:var(--texto2);margin-bottom:4px}
+.sync-linha{display:flex;gap:6px}
+.sync-linha input{flex:1;min-width:0}
+.sync-linha button{white-space:nowrap}
 
 /* --- Notícias --- */
 .abas{display:flex;gap:4px;margin-bottom:12px}
@@ -142,6 +161,7 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
     <a href="#ativo" class="ativo">Dashboard</a>
     <a href="#watchlist">Watchlist</a>
     <a href="#alertas">Alertas</a>
+    <a href="#sync">Sincronizar</a>
     <a href="#mercado">Mercado</a>
     <a href="#noticias">Notícias</a>
   </nav>
@@ -159,11 +179,19 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
   <div class="grade-principal">
     <section class="cartao" id="ativo">
       <div id="ativoCab" class="ativo-cab"><span class="carregando">Carregando ativo…</span></div>
-      <div class="periodos" id="periodos">
-        <button data-r="1d">1D</button><button data-r="5d">5D</button><button data-r="1mo" class="ativo">1M</button>
-        <button data-r="6mo">6M</button><button data-r="1y">1A</button><button data-r="5y">5A</button>
+      <div class="barra-grafico">
+        <div class="periodos" id="periodos">
+          <button data-r="1d">1D</button><button data-r="5d">5D</button><button data-r="1mo" class="ativo">1M</button>
+          <button data-r="6mo">6M</button><button data-r="1y">1A</button><button data-r="5y">5A</button>
+        </div>
+        <div class="modo-grafico" id="modoGrafico" role="group" aria-label="Tipo de gráfico">
+          <button data-m="simples" class="ativo" title="Linha de fechamentos (Yahoo Finance)">Simples</button>
+          <button data-m="tv" title="Gráfico completo do TradingView, com indicadores e velas">TradingView</button>
+        </div>
       </div>
       <div id="grafico"><div class="dica" id="dica"></div></div>
+      <div id="graficoTV" class="tv-ativo" hidden></div>
+      <p class="nota" id="notaTV" hidden></p>
       <div class="estatisticas" id="estatisticas"></div>
     </section>
 
@@ -171,7 +199,7 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
       <section class="cartao" id="watchlist">
         <h2><span class="etiqueta">Watchlist</span> Ativos que você acompanha <span class="extra" id="wlAtualizado"></span></h2>
         <div class="lista" id="wlLista"></div>
-        <p class="nota">Salva só neste navegador. Clique num ativo para vê-lo no gráfico.</p>
+        <p class="nota">Clique num ativo para vê-lo no gráfico. Sincroniza entre aparelhos pelo código do monitor.</p>
       </section>
 
       <section class="cartao" id="alertas">
@@ -183,7 +211,29 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
           <input id="alAlvo" type="number" step="any" min="0" placeholder="Preço-alvo" required>
           <button class="primario cheio" type="submit">Criar alerta</button>
         </form>
-        <p class="nota">Os alertas são checados a cada minuto enquanto esta página estiver aberta, com aviso na tela e notificação do navegador. Monitorar um preço não é sinal de compra ou venda.</p>
+        <p class="nota" id="notaAlertas">Com a página aberta, os alertas são checados a cada minuto (aviso na tela e notificação do navegador). Monitorar um preço não é sinal de compra ou venda.</p>
+      </section>
+
+      <section class="cartao" id="sync">
+        <h2><span class="etiqueta">Sincronizar</span> Aparelhos e e-mail</h2>
+        <div class="sync-estado" id="syncEstado"><span class="luz"></span><span>Conectando ao servidor…</span></div>
+        <div class="sync-bloco" id="syncSenha" hidden>
+          <label for="syncSenhaCampo">Este site tem senha de acesso. Digite-a para salvar no servidor:</label>
+          <div class="sync-linha"><input id="syncSenhaCampo" type="password" autocomplete="current-password" placeholder="Senha de acesso"><button type="button" id="syncSenhaBt">Entrar</button></div>
+        </div>
+        <div class="sync-bloco">
+          <label for="syncCodigo">Código do monitor <span class="nota" style="margin:0">(guarde em segredo: quem tem o código vê e altera sua lista)</span></label>
+          <div class="sync-linha"><input id="syncCodigo" type="password" readonly class="mono"><button type="button" id="syncMostrar">Mostrar</button><button type="button" id="syncCopiar">Copiar</button></div>
+        </div>
+        <div class="sync-bloco">
+          <label for="syncOutro">Usar o código de outro aparelho</label>
+          <div class="sync-linha"><input id="syncOutro" class="mono" placeholder="Cole o código aqui" autocomplete="off"><button type="button" id="syncConectar">Conectar</button></div>
+        </div>
+        <div class="sync-bloco">
+          <label for="syncEmail">E-mail para receber os alertas</label>
+          <div class="sync-linha"><input id="syncEmail" type="email" placeholder="voce@exemplo.com" autocomplete="email"><button type="button" id="syncEmailSalvar">Salvar</button><button type="button" id="syncEmailTeste">Testar</button></div>
+        </div>
+        <p class="nota" id="syncNota"></p>
       </section>
     </div>
   </div>
@@ -217,6 +267,10 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
 const CHAVE_WL = 'trader.monitor.watchlist';
 const CHAVE_AL = 'trader.monitor.alertas';
 const CHAVE_FOCO = 'trader.monitor.foco';
+const CHAVE_CODIGO = 'trader.monitor.codigo';
+const CHAVE_EMAIL = 'trader.monitor.email';
+const CHAVE_MODO = 'trader.monitor.grafico';
+const CHAVE_SENHA = 'trader.senha'; // a mesma que o chat grava ao validar a senha
 const WL_PADRAO = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', '^BVSP', 'AAPL', 'NVDA', 'USDBRL=X', 'BTC-USD'];
 const POPULARES = [
   { symbol: 'PETR4.SA', nome: 'Petrobras PN', bolsa: 'B3' }, { symbol: 'VALE3.SA', nome: 'Vale ON', bolsa: 'B3' },
@@ -262,6 +316,7 @@ let alertas = ler(CHAVE_AL, []);
 if (!Array.isArray(alertas)) alertas = [];
 let foco = ler(CHAVE_FOCO, null) || watchlist[0] || 'PETR4.SA';
 let periodo = '1mo';
+let modoGrafico = ler(CHAVE_MODO, 'simples') === 'tv' ? 'tv' : 'simples';
 let abaNoticias = 'mercado';
 const cotacoes = {}; // symbol -> { preco, variacao, moeda, nome, ts }
 
@@ -337,6 +392,7 @@ function selecionar(simbolo){
   $('alSimbolo').value = foco;
   renderWatchlist();
   carregarHistorico();
+  renderTV();
   if (abaNoticias === 'ativo') carregarNoticias();
   atualizarAbaAtivo();
 }
@@ -395,6 +451,7 @@ function renderEstatisticas(d){
   $('estatisticas').innerHTML = itens.map(([r, v]) => `<div><div class="r">${r}</div><div class="v">${v}</div></div>`).join('');
 }
 function desenharGrafico(d, msg){
+  if (modoGrafico === 'tv') return;
   const el = $('grafico');
   el.querySelectorAll('svg,.vazio').forEach((n) => n.remove());
   if (!d) { if (msg) el.insertAdjacentHTML('afterbegin', `<div class="vazio">${esc(msg)}</div>`); return; }
@@ -470,9 +527,9 @@ window.addEventListener('resize', () => { clearTimeout(redimTimer); redimTimer =
 function adicionarWl(s){
   if (watchlist.includes(s)) return;
   if (watchlist.length >= MAX_WL) { toast(`A watchlist aceita até ${MAX_WL} ativos. Remova um para incluir outro.`); return; }
-  watchlist.push(s); gravar(CHAVE_WL, watchlist); renderWatchlist(); atualizarCotacoes([s]);
+  watchlist.push(s); gravar(CHAVE_WL, watchlist); renderWatchlist(); atualizarCotacoes([s]); agendarEnvio();
 }
-function removerWl(s){ watchlist = watchlist.filter((x) => x !== s); gravar(CHAVE_WL, watchlist); renderWatchlist(); }
+function removerWl(s){ watchlist = watchlist.filter((x) => x !== s); gravar(CHAVE_WL, watchlist); renderWatchlist(); agendarEnvio(); }
 function renderWatchlist(){
   const el = $('wlLista');
   if (!watchlist.length) { el.innerHTML = '<div class="vazio">Sua watchlist está vazia. Use a busca e toque em “Adicionar à watchlist”.</div>'; return; }
@@ -514,7 +571,7 @@ function renderAlertas(){
     const atual = c && c.preco != null ? ` · agora ${fmtPreco(c.preco, c.moeda)}` : '';
     return `<div class="alerta-linha${a.disparado ? ' disparado' : ''}">
       <div class="txt"><b class="mono">${esc(a.symbol)}</b> ${a.tipo === 'acima' ? '≥' : '≤'} <b class="mono">${fmtPreco(a.alvo)}</b><span class="nota" style="margin:0">${atual}</span></div>
-      <span class="estado">${a.disparado ? 'atingido ' + fmtData(a.disparado) : 'ativo'}</span>
+      <span class="estado" title="${a.emailEnviado ? 'E-mail enviado em ' + esc(fmtData(a.emailEnviado)) : ''}">${a.disparado ? 'atingido ' + fmtData(a.disparado) + (a.emailEnviado ? ' · ✉' : '') : 'ativo'}</span>
       <button type="button" class="x" data-rm="${esc(a.id)}" title="Excluir" style="background:transparent;border:0;color:var(--apagado)">×</button>
     </div>`;
   }).join('');
@@ -522,7 +579,7 @@ function renderAlertas(){
 $('alLista').addEventListener('click', (ev) => {
   const rm = ev.target.closest('[data-rm]');
   if (!rm) return;
-  alertas = alertas.filter((a) => a.id !== rm.dataset.rm); gravar(CHAVE_AL, alertas); renderAlertas();
+  alertas = alertas.filter((a) => a.id !== rm.dataset.rm); gravar(CHAVE_AL, alertas); renderAlertas(); agendarEnvio();
 });
 $('alForm').addEventListener('submit', (ev) => {
   ev.preventDefault();
@@ -535,6 +592,7 @@ $('alForm').addEventListener('submit', (ev) => {
   gravar(CHAVE_AL, alertas);
   $('alAlvo').value = '';
   renderAlertas();
+  agendarEnvio();
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
   atualizarCotacoes([symbol]);
 });
@@ -551,7 +609,7 @@ function checarAlertas(){
       if ('Notification' in window && Notification.permission === 'granted') { try { new Notification('Alerta de preço — Agente Trader', { body: msg }); } catch (_) {} }
     }
   }
-  if (mudou) gravar(CHAVE_AL, alertas);
+  if (mudou) { gravar(CHAVE_AL, alertas); agendarEnvio(); }
   renderAlertas();
 }
 
@@ -624,8 +682,191 @@ function carregarWidgets(){
   });
 }
 
+// ---------- Gráfico do TradingView para o ativo em foco ----------
+function simboloTV(s){
+  const fixos = { '^BVSP': 'BMFBOVESPA:IBOV', '^GSPC': 'SP:SPX', '^DJI': 'DJ:DJI', '^IXIC': 'NASDAQ:IXIC' };
+  if (fixos[s]) return fixos[s];
+  let m;
+  if ((m = s.match(/^([A-Z0-9]+)\.SA$/))) return 'BMFBOVESPA:' + m[1];
+  if ((m = s.match(/^([A-Z]{3})([A-Z]{3})=X$/))) return 'FX_IDC:' + m[1] + m[2];
+  if ((m = s.match(/^([A-Z0-9]+)-USD$/))) return 'BITSTAMP:' + m[1] + 'USD';
+  return s;
+}
+let tvAtual = null;
+function renderTV(){
+  if (modoGrafico !== 'tv' || tvAtual === foco) return;
+  tvAtual = foco;
+  $('graficoTV').innerHTML = '';
+  widgetTV('graficoTV', 'embed-widget-advanced-chart.js', {
+    autosize: true, symbol: simboloTV(foco), interval: 'D', timezone: 'America/Sao_Paulo', theme: 'dark', style: '1',
+    locale: 'br', allow_symbol_change: false, hide_side_toolbar: false, calendar: false, support_host: 'https://www.tradingview.com',
+    backgroundColor: 'rgba(17,26,43,1)', gridColor: 'rgba(34,48,80,0.5)',
+  });
+  const nota = $('notaTV');
+  nota.hidden = !ehBR(foco) && foco !== '^BVSP';
+  nota.textContent = 'O widget gratuito do TradingView nem sempre mostra ativos da B3. Se o gráfico vier vazio, volte para “Simples”.';
+}
+function aplicarModoGrafico(){
+  const tv = modoGrafico === 'tv';
+  $('modoGrafico').querySelectorAll('button').forEach((b) => b.classList.toggle('ativo', b.dataset.m === modoGrafico));
+  $('periodos').style.visibility = tv ? 'hidden' : '';
+  $('grafico').hidden = tv;
+  $('graficoTV').hidden = !tv;
+  if (tv) renderTV(); else { $('notaTV').hidden = true; desenharGrafico(historicoAtual, 'Sem dados para o gráfico.'); }
+}
+$('modoGrafico').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-m]');
+  if (!b || b.dataset.m === modoGrafico) return;
+  modoGrafico = b.dataset.m; gravar(CHAVE_MODO, modoGrafico); aplicarModoGrafico();
+});
+
+// ---------- Sincronização com o servidor ----------
+// Estados: 'conectando' | 'ok' | 'senha' | 'erro'. Fora de 'ok', tudo segue salvo só no navegador.
+let codigo = ler(CHAVE_CODIGO, null);
+let emailConta = ler(CHAVE_EMAIL, '') || '';
+let emailDisponivel = false;
+let estadoSync = 'conectando';
+let envioTimer = null, envioPendente = false, enviando = false;
+function gerarCodigo(){
+  const b = new Uint8Array(24); crypto.getRandomValues(b);
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+if (!/^[A-Za-z0-9_-]{32,64}$/.test(codigo || '')) { codigo = gerarCodigo(); gravar(CHAVE_CODIGO, codigo); }
+function senhaSalva(){ try { return localStorage.getItem(CHAVE_SENHA) || ''; } catch (_) { return ''; } }
+function cabecalhos(){ return { 'Content-Type': 'application/json', 'X-Monitor-Token': codigo, 'X-Senha-Acesso': senhaSalva() }; }
+async function chamarConta(metodo, corpo, cod){
+  const h = cabecalhos(); if (cod) h['X-Monitor-Token'] = cod;
+  const r = await fetch('/api/monitor/conta', { method: metodo, headers: h, body: corpo ? JSON.stringify(corpo) : undefined });
+  const j = await r.json().catch(() => ({}));
+  return { status: r.status, j };
+}
+function renderSync(msg){
+  const textos = {
+    conectando: ['', 'Conectando ao servidor…'],
+    ok: ['ok', 'Sincronizado: watchlist e alertas salvos no servidor.'],
+    senha: ['aviso', 'Falta a senha de acesso: por enquanto, salvo só neste navegador.'],
+    erro: ['falha', 'Servidor indisponível: por enquanto, salvo só neste navegador.'],
+  };
+  const [cls, txt] = textos[estadoSync];
+  $('syncEstado').innerHTML = `<span class="luz ${cls}"></span><span>${esc(msg || txt)}</span>`;
+  $('syncSenha').hidden = estadoSync !== 'senha';
+  $('syncCodigo').value = codigo;
+  if (document.activeElement !== $('syncEmail')) $('syncEmail').value = emailConta;
+  const online = estadoSync === 'ok';
+  ['syncConectar', 'syncEmailSalvar'].forEach((id) => { $(id).disabled = !online; });
+  $('syncEmailTeste').disabled = !online || !emailDisponivel || !emailConta;
+  $('syncNota').textContent = !online ? ''
+    : emailDisponivel
+      ? (emailConta ? 'O servidor confere os alertas a cada 5 minutos, mesmo com a página fechada, e avisa por e-mail quando um alvo é atingido.' : 'Cadastre um e-mail para receber os alertas mesmo com a página fechada.')
+      : 'O servidor confere os alertas a cada 5 minutos, mesmo com a página fechada, mas ainda não tem envio de e-mail configurado: o disparo aparece aqui quando você abrir o monitor.';
+  $('notaAlertas').textContent = online
+    ? 'Checados a cada minuto com a página aberta e a cada 5 minutos no servidor com ela fechada. Monitorar um preço não é sinal de compra ou venda.'
+    : 'Com a página aberta, os alertas são checados a cada minuto (aviso na tela e notificação do navegador). Monitorar um preço não é sinal de compra ou venda.';
+}
+function aplicarDoServidor(d){
+  const antes = new Map(alertas.map((a) => [a.id, a]));
+  watchlist = Array.isArray(d.watchlist) ? d.watchlist : watchlist;
+  alertas = Array.isArray(d.alertas) ? d.alertas : alertas;
+  emailConta = d.email || '';
+  emailDisponivel = !!d.emailDisponivel;
+  for (const a of alertas) {
+    const velho = antes.get(a.id);
+    if (a.disparado && velho && !velho.disparado) toast(`Alerta atingido: ${a.symbol} ${a.tipo === 'acima' ? '≥' : '≤'} ${fmtPreco(a.alvo)}` + (a.precoDisparo != null ? ` (preço ${fmtPreco(a.precoDisparo)})` : '') + '.');
+  }
+  gravar(CHAVE_WL, watchlist); gravar(CHAVE_AL, alertas); gravar(CHAVE_EMAIL, emailConta);
+  renderWatchlist(); renderAlertas();
+  if (historicoAtual) renderCabecalho(historicoAtual);
+}
+function corpoConta(){
+  return { watchlist, email: emailConta, alertas: alertas.map(({ id, symbol, tipo, alvo, criado, disparado }) => ({ id, symbol, tipo, alvo, criado, disparado })) };
+}
+function tratarFalha(status, j){
+  estadoSync = status === 401 ? 'senha' : 'erro';
+  renderSync(status === 401 || !j.erro ? '' : 'Não salvou no servidor: ' + j.erro);
+}
+function agendarEnvio(){
+  envioPendente = true;
+  clearTimeout(envioTimer);
+  envioTimer = setTimeout(enviarConta, 700);
+}
+// Só envia depois de ter lido o servidor ao menos uma vez: senão um aparelho novo
+// sobrescreveria a lista salva antes de recebê-la.
+let jaSincronizou = false;
+async function enviarConta(){
+  if (!jaSincronizou) return;
+  if (enviando) { agendarEnvio(); return; }
+  enviando = true; envioPendente = false;
+  try {
+    const { status, j } = await chamarConta('PUT', corpoConta());
+    if (status === 200) { estadoSync = 'ok'; if (!envioPendente) aplicarDoServidor(j); renderSync(); }
+    else { envioPendente = true; tratarFalha(status, j); }
+  } catch (_) { envioPendente = true; estadoSync = 'erro'; renderSync(); }
+  finally { enviando = false; }
+}
+async function puxarConta(){
+  if (enviando) return;
+  // mudanças feitas enquanto o servidor estava fora sobem antes de puxar qualquer coisa
+  if (jaSincronizou && envioPendente) return enviarConta();
+  try {
+    const { status, j } = await chamarConta('GET');
+    if (enviando || (jaSincronizou && envioPendente)) return;
+    if (status === 200) { jaSincronizou = true; envioPendente = false; estadoSync = 'ok'; aplicarDoServidor(j); renderSync(); }
+    else if (status === 404) { jaSincronizou = true; emailDisponivel = !!j.emailDisponivel; estadoSync = 'ok'; await enviarConta(); }
+    else tratarFalha(status, j);
+  } catch (_) { estadoSync = 'erro'; renderSync(); }
+}
+$('syncMostrar').onclick = () => {
+  const c = $('syncCodigo'); const vis = c.type === 'text';
+  c.type = vis ? 'password' : 'text'; $('syncMostrar').textContent = vis ? 'Mostrar' : 'Ocultar';
+};
+$('syncCopiar').onclick = async () => {
+  try { await navigator.clipboard.writeText(codigo); toast('Código copiado. Cole em “Usar o código de outro aparelho” no outro navegador.'); }
+  catch (_) { $('syncCodigo').type = 'text'; $('syncCodigo').select(); toast('Selecionei o código: copie com Ctrl+C.'); }
+};
+$('syncConectar').onclick = async () => {
+  const novo = $('syncOutro').value.trim();
+  if (!/^[A-Za-z0-9_-]{32,64}$/.test(novo)) { toast('Código inválido: confira se copiou inteiro.'); return; }
+  if (novo === codigo) { toast('Este já é o código deste aparelho.'); return; }
+  try {
+    const { status, j } = await chamarConta('GET', null, novo);
+    if (status === 404) { toast('Nenhum monitor salvo com este código.'); return; }
+    if (status !== 200) { tratarFalha(status, j); return; }
+    if (!confirm('Trocar pela watchlist e pelos alertas do outro aparelho? Os deste navegador serão substituídos.')) return;
+    codigo = novo; gravar(CHAVE_CODIGO, codigo); $('syncOutro').value = '';
+    clearTimeout(envioTimer); envioPendente = false;
+    aplicarDoServidor(j); estadoSync = 'ok'; renderSync();
+    atualizarCotacoes();
+    toast('Pronto: este aparelho agora usa o mesmo monitor.');
+  } catch (_) { toast('Não consegui falar com o servidor.'); }
+};
+$('syncSenhaBt').onclick = async () => {
+  const s = $('syncSenhaCampo').value;
+  if (!s) return;
+  const r = await fetch('/api/acesso', { method: 'POST', headers: { 'X-Senha-Acesso': s } }).catch(() => null);
+  if (!r || !r.ok) { toast('Senha incorreta.'); return; }
+  try { localStorage.setItem(CHAVE_SENHA, s); } catch (_) {}
+  $('syncSenhaCampo').value = '';
+  estadoSync = 'conectando'; renderSync(); puxarConta();
+};
+$('syncSenhaCampo').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') $('syncSenhaBt').click(); });
+$('syncEmailSalvar').onclick = () => {
+  const e = $('syncEmail').value.trim().toLowerCase();
+  if (e && !$('syncEmail').checkValidity()) { toast('E-mail inválido.'); return; }
+  emailConta = e; gravar(CHAVE_EMAIL, emailConta);
+  enviarConta().then(() => { if (estadoSync === 'ok') toast(e ? 'E-mail salvo.' : 'E-mail removido.'); });
+};
+$('syncEmailTeste').onclick = async () => {
+  $('syncEmailTeste').disabled = true;
+  try {
+    const r = await fetch('/api/monitor/email-teste', { method: 'POST', headers: cabecalhos() });
+    const j = await r.json().catch(() => ({}));
+    toast(r.ok ? `E-mail de teste enviado para ${emailConta}.` : (j.erro || 'Falha ao enviar o teste.'));
+  } catch (_) { toast('Não consegui falar com o servidor.'); }
+  finally { renderSync(); }
+};
+
 // ---------- Navegação ----------
-const secoes = ['ativo', 'watchlist', 'alertas', 'mercado', 'noticias'];
+const secoes = ['ativo', 'watchlist', 'alertas', 'sync', 'mercado', 'noticias'];
 const links = [...document.querySelectorAll('nav a')];
 const obs = new IntersectionObserver((ents) => {
   ents.forEach((e) => { if (e.isIntersecting) links.forEach((a) => a.classList.toggle('ativo', a.getAttribute('href') === '#' + e.target.id)); });
@@ -637,6 +878,10 @@ $('alSimbolo').value = foco;
 atualizarAbaAtivo();
 renderWatchlist();
 renderAlertas();
+renderSync();
+aplicarModoGrafico();
+puxarConta();
+setInterval(puxarConta, 60_000);
 carregarFaixa();
 carregarHistorico();
 atualizarCotacoes();

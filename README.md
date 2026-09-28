@@ -91,6 +91,16 @@ Sem código, o agente identifica qual dos 100 se aplica, diz qual está usando e
 - `SENHA_ACESSO`: senha única pedida pelo site. Sem ela, o site fica aberto a quem tiver a URL.
 - `RATE_LIMIT_POR_MINUTO` (padrão 20 por IP) e `TIMEOUT_IA_MS` (padrão 5 min).
 
+## Monitor (`/monitor`)
+
+Painel de acompanhamento: busca por nome ou ticker, gráfico do ativo (linha simples com dados do Yahoo ou gráfico completo do TradingView), watchlist, alertas de preço-alvo, visão de mercado, heatmap e notícias. O botão 📈 Monitor no topo do chat leva até ele.
+
+- **Sincronização sem login:** cada navegador gera um código do monitor. Colando esse código em "Usar o código de outro aparelho", o outro navegador passa a ver e editar a mesma watchlist e os mesmos alertas. No servidor fica só o hash do código. Se `SENHA_ACESSO` estiver definida, salvar no servidor também exige a senha.
+- **Alertas com a página fechada:** o servidor confere os alertas ativos a cada 5 minutos (`MONITOR_INTERVALO_MS`) com preços do Yahoo e, se houver e-mail cadastrado e SMTP configurado, manda um e-mail por disparo.
+- **Onde ficam os dados:** em `DADOS_DIR/monitor.json`. No Railway o disco do container é apagado a cada deploy, então crie um **Volume** (serviço → Settings → Volumes), monte em `/data` e defina `DADOS_DIR=/data`. Sem isso o monitor funciona, mas as listas salvas somem no próximo deploy.
+- **E-mail (SMTP):** `SMTP_HOST`, `SMTP_PORT` (587 ou 465), `SMTP_USER`, `SMTP_PASS` e `SMTP_FROM`. Serve qualquer provedor SMTP. No Gmail, use `smtp.gmail.com`, porta 587 e uma [senha de app](https://myaccount.google.com/apppasswords), não a senha da conta. Sem SMTP, os disparos aparecem só na tela.
+- Conferência depois do deploy: `GET /api/saude` traz `monitor.dadosPersistentes`, `monitor.gravando` e `monitor.email`.
+
 ## Proteções incluídas
 
 - Rate limit por IP, limite de tamanho de mensagem, de histórico e de anexos (5 por mensagem, 20MB cada).

@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const { AGENTE_TRADER, CODIGOS_TRADER, CATEGORIAS_TRADER, mensagemInvocaTrader } = require('./trader');
+const monitor = require('./monitor');
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
@@ -161,6 +162,7 @@ app.get('/api/saude', (_req, res) => res.json({
   ok: true, chave: !!client, modelo: MODEL, modeloValido, effort: EFFORT, senha: !!SENHA_ACESSO, codigos: CODIGOS_TRADER.length,
   // conferir depois do deploy se as Variables chegaram
   finnhub: !!FINNHUB_KEY, fred: !!FRED_KEY, brapi: !!BRAPI_KEY, exa: !!EXA_KEY,
+  monitor: { dadosPersistentes: !!process.env.DADOS_DIR, gravando: monitorStore.saudavel(), email: emailDisponivel },
 }));
 
 app.get('/api/codigos', (_req, res) => res.json({
@@ -841,6 +843,102 @@ app.get('/api/monitor/noticias', limitarDados, async (req, res) => {
   }
 });
 
+// ---------- Conta sincronizada, alertas no servidor e e-mail ----------
+const DADOS_DIR = (process.env.DADOS_DIR || '').trim() || path.join(__dirname, 'dados');
+const monitorStore = monitor.criarStore(path.join(DADOS_DIR, 'monitor.json'));
+const SMTP = {
+  host: (process.env.SMTP_HOST || '').trim(),
+  porta: Number(process.env.SMTP_PORT) || 587,
+  usuario: (process.env.SMTP_USER || '').trim(),
+  senha: (process.env.SMTP_PASS || '').trim(),
+  remetente: (process.env.SMTP_FROM || process.env.SMTP_USER || '').trim(),
+};
+const emailDisponivel = !!(SMTP.host && SMTP.remetente);
+const URL_PUBLICA = (process.env.URL_PUBLICA || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '')).trim().replace(/\/+$/, '');
+const INTERVALO_ALERTAS_MS = Math.max(60_000, Number(process.env.MONITOR_INTERVALO_MS) || 300_000);
+const EMAILS_POR_HORA = Number(process.env.MONITOR_EMAILS_POR_HORA) || 60;
+
+let _transporte = null;
+const _emailsEnviados = [];
+async function enviarEmail(para, { assunto, texto }) {
+  if (!emailDisponivel) throw new Error('SMTP não configurado');
+  const corte = Date.now() - 3_600_000;
+  while (_emailsEnviados.length && _emailsEnviados[0] < corte) _emailsEnviados.shift();
+  if (_emailsEnviados.length >= EMAILS_POR_HORA) throw new Error('limite de e-mails por hora atingido');
+  if (!_transporte) {
+    _transporte = require('nodemailer').createTransport({
+      host: SMTP.host, port: SMTP.porta, secure: SMTP.porta === 465,
+      auth: SMTP.usuario ? { user: SMTP.usuario, pass: SMTP.senha } : undefined,
+    });
+  }
+  await _transporte.sendMail({ from: `Agente Trader Monitor <${SMTP.remetente}>`, to: para, subject: assunto, text: texto });
+  _emailsEnviados.push(Date.now());
+}
+
+async function precoAtual(simbolo) {
+  const d = await fetchHistorico(simbolo, '1d');
+  return d.preco;
+}
+
+/** Lê o código do monitor do cabeçalho; responde 400 e devolve null se faltar. */
+function hashDoCodigo(req, res) {
+  const token = String(req.headers['x-monitor-token'] || '');
+  if (!monitor.tokenValido(token)) { res.status(400).json({ erro: 'Código do monitor ausente ou inválido.' }); return null; }
+  return monitor.hashToken(token);
+}
+
+app.get('/api/monitor/conta', limitarDados, exigirSenha, (req, res) => {
+  const hash = hashDoCodigo(req, res);
+  if (!hash) return;
+  const conta = monitorStore.ler(hash);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!conta) return res.status(404).json({ erro: 'Nenhum monitor salvo com este código.', emailDisponivel });
+  res.json({ ...monitor.contaPublica(conta), emailDisponivel });
+});
+
+app.put('/api/monitor/conta', limitarDados, exigirSenha, (req, res) => {
+  const hash = hashDoCodigo(req, res);
+  if (!hash) return;
+  let dados;
+  try { dados = monitor.normalizarConta(req.body); } catch (e) { return res.status(400).json({ erro: e.message }); }
+  const anterior = monitorStore.ler(hash);
+  if (!anterior && monitorStore.total() >= monitor.MAX_CONTAS) {
+    return res.status(507).json({ erro: 'O servidor atingiu o limite de monitores salvos.' });
+  }
+  const conta = {
+    watchlist: dados.watchlist,
+    alertas: monitor.mesclarAlertas(anterior ? anterior.alertas : [], dados.alertas),
+    email: dados.email,
+    criado: anterior ? anterior.criado : Date.now(),
+    atualizado: Date.now(),
+  };
+  try { monitorStore.gravar(hash, conta); } catch (e) { return res.status(500).json({ erro: e.message }); }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ...monitor.contaPublica(conta), emailDisponivel });
+});
+
+const _ultimoTeste = new Map(); // hash -> ts
+app.post('/api/monitor/email-teste', limitar, exigirSenha, async (req, res) => {
+  const hash = hashDoCodigo(req, res);
+  if (!hash) return;
+  if (!emailDisponivel) return res.status(503).json({ erro: 'Envio de e-mail não configurado no servidor (SMTP_HOST/SMTP_FROM).' });
+  const conta = monitorStore.ler(hash);
+  if (!conta || !conta.email) return res.status(400).json({ erro: 'Salve um e-mail no monitor antes de testar.' });
+  const ultimo = _ultimoTeste.get(hash) || 0;
+  if (Date.now() - ultimo < 60_000) return res.status(429).json({ erro: 'Aguarde um minuto para enviar outro teste.' });
+  _ultimoTeste.set(hash, Date.now());
+  try {
+    await enviarEmail(conta.email, {
+      assunto: 'Teste do Monitor — Agente Trader',
+      texto: `Tudo certo: este e-mail vai receber os alertas de preço do Monitor.\n\n${URL_PUBLICA ? `Monitor: ${URL_PUBLICA}/monitor\n\n` : ''}Conteúdo educacional. Alerta de preço não é recomendação de investimento (Resolução CVM 20/2021).`,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    log('erro', 'monitor/email-teste:', e.message);
+    res.status(502).json({ erro: 'Não consegui enviar o e-mail de teste. Confira as variáveis SMTP no servidor.' });
+  }
+});
+
 app.get('/monitor', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
@@ -857,6 +955,12 @@ if (require.main === module) {
     if (!FRED_KEY) console.warn('FRED_API_KEY ausente: /api/eua/indicadores responde 503.');
     if (!BRAPI_KEY) console.warn('BRAPI_API_KEY ausente: /api/br/cotacoes responde 503.');
     if (!EXA_KEY) console.warn('EXA_API_KEY ausente: /api/br/noticias responde 503.');
+    if (!process.env.DADOS_DIR) console.warn(`DADOS_DIR ausente: o monitor grava em ${DADOS_DIR}; no Railway isso se perde a cada deploy (monte um Volume e aponte DADOS_DIR para ele).`);
+    if (!emailDisponivel) console.warn('SMTP_HOST/SMTP_FROM ausentes: alertas do monitor não enviam e-mail.');
+    monitor.criarRotina({
+      store: monitorStore, buscarPreco: precoAtual, enviarEmail: emailDisponivel ? enviarEmail : null,
+      urlMonitor: URL_PUBLICA ? `${URL_PUBLICA}/monitor` : '', intervaloMs: INTERVALO_ALERTAS_MS, log,
+    }).iniciar();
     validarModelo();
   });
 }

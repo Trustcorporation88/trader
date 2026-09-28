@@ -74,4 +74,78 @@ assert.match(mensagemErroAnthropic({ status: 404, message: 'model: not found' })
 assert.match(mensagemErroAnthropic({ status: 529, message: 'overloaded_error' }), /sobrecarregada/);
 console.log('6. busca na web e erros OK');
 
-console.log('\nteste-trader: todos os cenários passaram.');
+// 7. Monitor: validação da conta, mesclagem entre aparelhos, disparo e e-mail
+(async () => {
+  const monitor = require('./monitor');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  assert.ok(monitor.tokenValido('a'.repeat(32)) && !monitor.tokenValido('curto') && !monitor.tokenValido('x'.repeat(31) + '!'));
+  assert.notStrictEqual(monitor.hashToken('a'.repeat(32)), 'a'.repeat(32), 'no disco fica o hash, não o código');
+
+  const alerta = (id, extra = {}) => ({ id, symbol: 'petr4.sa', tipo: 'acima', alvo: 50, criado: 1, disparado: null, ...extra });
+  const conta = monitor.normalizarConta({ watchlist: ['aapl', 'AAPL', 'PETR4.SA', '<script>'], alertas: [alerta('abcd')], email: ' Eu@Exemplo.com ' });
+  assert.deepStrictEqual(conta.watchlist, ['AAPL', 'PETR4.SA'], 'watchlist normalizada, sem duplicata nem lixo');
+  assert.strictEqual(conta.alertas[0].symbol, 'PETR4.SA');
+  assert.strictEqual(conta.email, 'eu@exemplo.com');
+  assert.throws(() => monitor.normalizarConta({ watchlist: [], alertas: [alerta('abcd', { tipo: 'compre' })] }), /Tipo de alerta/);
+  assert.throws(() => monitor.normalizarConta({ watchlist: [], alertas: [alerta('abcd', { alvo: -1 })] }), /Preço-alvo/);
+  assert.throws(() => monitor.normalizarConta({ watchlist: [], alertas: [alerta('abcd'), alerta('abcd')] }), /identificador/);
+  assert.throws(() => monitor.normalizarConta({ watchlist: [], alertas: [], email: 'nao-e-email' }), /E-mail inválido/);
+  assert.throws(() => monitor.normalizarConta({ watchlist: Array.from({ length: 16 }, (_, i) => `T${i}`), alertas: [] }), /até 15/);
+  assert.throws(() => monitor.normalizarConta({ watchlist: [], alertas: Array.from({ length: 31 }, (_, i) => alerta(`id${i}xx`)) }), /30 alertas/);
+
+  // disparo feito no servidor não se perde quando outro aparelho manda a lista antiga
+  const doServidor = [{ ...alerta('abcd'), symbol: 'PETR4.SA', disparado: 1000, precoDisparo: 51, notificado: 2000 }];
+  const mescla = monitor.mesclarAlertas(doServidor, [{ ...alerta('abcd'), symbol: 'PETR4.SA' }, { ...alerta('efgh'), symbol: 'VALE3.SA' }]);
+  assert.strictEqual(mescla[0].disparado, 1000);
+  assert.strictEqual(mescla[0].notificado, 2000);
+  assert.strictEqual(mescla[1].notificado, null, 'alerta novo começa sem e-mail');
+  assert.strictEqual(monitor.mesclarAlertas(doServidor, []).length, 0, 'exclusão no aparelho vale');
+  const editado = monitor.mesclarAlertas(doServidor, [{ ...alerta('abcd'), symbol: 'PETR4.SA', alvo: 60 }]);
+  assert.strictEqual(editado[0].disparado, null, 'alvo mudado reinicia o alerta');
+
+  // rotina: dispara pelo preço, manda um e-mail por conta, grava e não repete
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monitor-'));
+  const store = monitor.criarStore(path.join(dir, 'monitor.json'));
+  const agora = Date.now();
+  store.gravar('h1', { watchlist: [], email: 'a@b.com', alertas: [
+    { id: 'aaaa', symbol: 'AAPL', tipo: 'acima', alvo: 100, criado: 1, disparado: null },
+    { id: 'bbbb', symbol: 'AAPL', tipo: 'abaixo', alvo: 100, criado: 1, disparado: null },
+    { id: 'cccc', symbol: 'PETR4.SA', tipo: 'abaixo', alvo: 40, criado: 1, disparado: agora - 7 * 3600_000 },
+  ] });
+  store.gravar('h2', { watchlist: [], email: '', alertas: [{ id: 'dddd', symbol: 'AAPL', tipo: 'acima', alvo: 1, criado: 1, disparado: null }] });
+  const emails = [];
+  const rotina = monitor.criarRotina({
+    store, intervaloMs: 60_000, urlMonitor: 'https://exemplo/monitor', log: () => {},
+    buscarPreco: async (s) => { if (s === 'AAPL') return 150; throw new Error('sem dados'); },
+    enviarEmail: async (para, msg) => { emails.push({ para, ...msg }); },
+  });
+  const r1 = await rotina.ciclo(agora);
+  assert.strictEqual(r1.enviados, 1);
+  assert.strictEqual(emails.length, 1, 'conta sem e-mail não recebe nada');
+  assert.match(emails[0].assunto, /AAPL/);
+  assert.match(emails[0].texto, /CVM 20\/2021/, 'e-mail de alerta leva o aviso CVM');
+  assert.match(emails[0].texto, /https:\/\/exemplo\/monitor/);
+  assert.doesNotMatch(emails[0].texto, /\b(compre|venda agora)\b/i);
+  const h1 = store.ler('h1');
+  assert.ok(h1.alertas[0].disparado && h1.alertas[0].notificado > 0, 'alerta acima disparou e foi notificado');
+  assert.strictEqual(h1.alertas[1].disparado, null, 'alerta abaixo não disparou');
+  assert.strictEqual(h1.alertas[2].notificado, -1, 'disparo antigo não gera e-mail atrasado');
+  assert.ok(store.ler('h2').alertas[0].disparado, 'conta sem e-mail também registra o disparo');
+  await rotina.ciclo(agora + 1000);
+  assert.strictEqual(emails.length, 1, 'não repete o e-mail');
+  const relido = monitor.criarStore(path.join(dir, 'monitor.json'));
+  assert.ok(relido.ler('h1').alertas[0].notificado > 0, 'estado persistido em disco');
+
+  // SMTP falhando: tenta 3 vezes e desiste
+  store.gravar('h3', { watchlist: [], email: 'c@d.com', alertas: [{ id: 'eeee', symbol: 'AAPL', tipo: 'acima', alvo: 1, criado: 1, disparado: null }] });
+  const falha = monitor.criarRotina({ store, intervaloMs: 60_000, log: () => {}, buscarPreco: async () => 150, enviarEmail: async () => { throw new Error('smtp fora'); } });
+  for (let i = 0; i < 4; i++) await falha.ciclo(agora + i);
+  assert.strictEqual(store.ler('h3').alertas[0].notificado, -1);
+  fs.rmSync(dir, { recursive: true, force: true });
+  console.log('7. monitor: conta, mesclagem e alertas OK');
+
+  console.log('\nteste-trader: todos os cenários passaram.');
+})().catch((e) => { console.error(e); process.exit(1); });
