@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const { AGENTE_TRADER, CODIGOS_TRADER, CATEGORIAS_TRADER, mensagemInvocaTrader } = require('./trader');
+const monitor = require('./monitor');
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
@@ -161,6 +162,7 @@ app.get('/api/saude', (_req, res) => res.json({
   ok: true, chave: !!client, modelo: MODEL, modeloValido, effort: EFFORT, senha: !!SENHA_ACESSO, codigos: CODIGOS_TRADER.length,
   // conferir depois do deploy se as Variables chegaram
   finnhub: !!FINNHUB_KEY, fred: !!FRED_KEY, brapi: !!BRAPI_KEY, exa: !!EXA_KEY,
+  monitor: { dadosPersistentes: !!process.env.DADOS_DIR, gravando: monitorStore.saudavel(), email: emailDisponivel },
 }));
 
 app.get('/api/codigos', (_req, res) => res.json({
@@ -701,6 +703,247 @@ app.get('/api/br/noticias', limitarBusca, async (req, res) => {
   }
 });
 
+// ============================================================
+// MONITOR — painel de acompanhamento (public/monitor.html)
+// Busca por nome/ticker e histórico para o gráfico, ambos do Yahoo (sem chave).
+// Watchlist e alertas vivem no localStorage do navegador; nada é gravado aqui.
+// ============================================================
+const YAHOO_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+};
+const SIMBOLO_VALIDO = /^[A-Za-z0-9.^=\-]{1,20}$/;
+const TIPOS_BUSCA = new Set(['EQUITY', 'ETF', 'INDEX', 'CURRENCY', 'CRYPTOCURRENCY', 'MUTUALFUND']);
+
+async function buscarAtivos(termo) {
+  const j = await fetchJson(
+    `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(termo)}&quotesCount=10&newsCount=0&lang=pt-BR&region=BR`,
+    { headers: YAHOO_HEADERS },
+  );
+  const quotes = ((j && j.quotes) || []).filter((q) => q.symbol && TIPOS_BUSCA.has(q.quoteType));
+  // sort estável: papéis da B3 sobem, o resto mantém a relevância do Yahoo
+  quotes.sort((a, b) => (/\.SA$/.test(b.symbol) ? 1 : 0) - (/\.SA$/.test(a.symbol) ? 1 : 0));
+  return quotes
+    .map((q) => ({
+      symbol: q.symbol,
+      nome: (q.longname || q.shortname || q.symbol).replace(/\s{2,}/g, ' ').trim(),
+      bolsa: q.exchDisp || q.exchange || null,
+      tipo: q.quoteType,
+    }));
+}
+
+app.get('/api/monitor/busca', limitarDados, async (req, res) => {
+  const termo = String(req.query.q || '').trim().slice(0, 40);
+  if (termo.length < 1) return res.status(400).json({ erro: 'Informe ?q= com o nome ou ticker.' });
+  const chave = `busca:${termo.toLowerCase()}`;
+  const cache = cacheGet(chave, 600_000, false); // 10 min
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=600'); return res.json(cache); }
+  try {
+    const data = { result: await buscarAtivos(termo) };
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.json(data);
+  } catch (e) {
+    log('erro', 'monitor/busca:', e.message);
+    res.status(502).json({ erro: 'Falha na busca de ativos.' });
+  }
+});
+
+// range -> intervalo das velas e tempo de cache
+const RANGES_HISTORICO = {
+  '1d': { intervalo: '5m', ttl: 60_000 },
+  '5d': { intervalo: '30m', ttl: 300_000 },
+  '1mo': { intervalo: '1d', ttl: 600_000 },
+  '6mo': { intervalo: '1d', ttl: 1_800_000 },
+  '1y': { intervalo: '1d', ttl: 3_600_000 },
+  '5y': { intervalo: '1wk', ttl: 3_600_000 },
+};
+
+async function fetchHistorico(simbolo, range) {
+  const { intervalo } = RANGES_HISTORICO[range];
+  const j = await fetchJson(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(simbolo)}?range=${range}&interval=${intervalo}`,
+    { headers: YAHOO_HEADERS },
+  );
+  const r0 = j && j.chart && j.chart.result && j.chart.result[0];
+  const meta = r0 && r0.meta;
+  if (!meta || meta.regularMarketPrice == null) throw new Error(`sem dados para ${simbolo}`);
+  const ts = r0.timestamp || [];
+  const fech = (r0.indicators && r0.indicators.quote && r0.indicators.quote[0] && r0.indicators.quote[0].close) || [];
+  const pontos = [];
+  ts.forEach((t, i) => { if (fech[i] != null) pontos.push([t * 1000, fech[i]]); });
+  const anterior = meta.chartPreviousClose != null ? meta.chartPreviousClose : meta.previousClose;
+  return {
+    symbol: simbolo,
+    nome: meta.longName || meta.shortName || simbolo,
+    moeda: meta.currency || null,
+    bolsa: meta.fullExchangeName || meta.exchangeName || null,
+    preco: meta.regularMarketPrice,
+    anterior: anterior != null ? anterior : null,
+    maxima52: meta.fiftyTwoWeekHigh != null ? meta.fiftyTwoWeekHigh : null,
+    minima52: meta.fiftyTwoWeekLow != null ? meta.fiftyTwoWeekLow : null,
+    range,
+    pontos,
+  };
+}
+
+app.get('/api/monitor/historico', limitarDados, async (req, res) => {
+  const simbolo = String(req.query.symbol || '').trim().toUpperCase();
+  const range = String(req.query.range || '1mo');
+  if (!SIMBOLO_VALIDO.test(simbolo)) return res.status(400).json({ erro: 'Informe ?symbol= com um ticker válido (ex.: PETR4.SA).' });
+  if (!RANGES_HISTORICO[range]) return res.status(400).json({ erro: `range inválido. Use: ${Object.keys(RANGES_HISTORICO).join(', ')}.` });
+  const chave = `hist:${simbolo}:${range}`;
+  const cache = cacheGet(chave, RANGES_HISTORICO[range].ttl, false);
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=60'); return res.json(cache); }
+  try {
+    const data = await fetchHistorico(simbolo, range);
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    res.json(data);
+  } catch (e) {
+    log('erro', `monitor/historico ${simbolo}:`, e.message);
+    const c = _euaCache.get(chave);
+    if (c) return res.json(c.data);
+    res.status(502).json({ erro: 'Falha ao buscar o histórico do ativo.' });
+  }
+});
+
+// Notícias de uma empresa dos EUA (Finnhub company-news). Ativos da B3 usam /api/br/noticias.
+async function fetchNoticiasEmpresa(simbolo) {
+  const ate = new Date();
+  const de = new Date(ate.getTime() - DIAS_NOTICIA * 24 * 60 * 60 * 1000);
+  const dia = (d) => d.toISOString().slice(0, 10);
+  const j = await fetchJson(
+    `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(simbolo)}&from=${dia(de)}&to=${dia(ate)}&token=${FINNHUB_KEY}`,
+    { timeout: 20_000 },
+  );
+  if (!Array.isArray(j)) throw new Error('resposta de notícias inválida');
+  return j.slice(0, 12).map((n) => ({
+    titulo: n.headline, resumo: n.summary || null, fonte: n.source, url: n.url,
+    data: n.datetime ? n.datetime * 1000 : null, imagem: n.image || null,
+  })).filter((n) => n.titulo && n.url);
+}
+
+app.get('/api/monitor/noticias', limitarDados, async (req, res) => {
+  if (faltaChave(FINNHUB_KEY, 'FINNHUB_API_KEY', res)) return;
+  const simbolo = String(req.query.symbol || '').trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(simbolo)) return res.status(400).json({ erro: 'Informe ?symbol= com um ticker dos EUA (ex.: AAPL).' });
+  const chave = `emp-news:${simbolo}`;
+  const cache = cacheGet(chave, 600_000, false); // 10 min
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=600'); return res.json(cache); }
+  try {
+    const data = { symbol: simbolo, result: await fetchNoticiasEmpresa(simbolo) };
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.json(data);
+  } catch (e) {
+    log('erro', `monitor/noticias ${simbolo}:`, e.message);
+    const c = _euaCache.get(chave);
+    if (c) return res.json(c.data);
+    res.status(502).json({ erro: 'Falha ao buscar notícias da empresa.' });
+  }
+});
+
+// ---------- Conta sincronizada, alertas no servidor e e-mail ----------
+const DADOS_DIR = (process.env.DADOS_DIR || '').trim() || path.join(__dirname, 'dados');
+const monitorStore = monitor.criarStore(path.join(DADOS_DIR, 'monitor.json'));
+const SMTP = {
+  host: (process.env.SMTP_HOST || '').trim(),
+  porta: Number(process.env.SMTP_PORT) || 587,
+  usuario: (process.env.SMTP_USER || '').trim(),
+  senha: (process.env.SMTP_PASS || '').trim(),
+  remetente: (process.env.SMTP_FROM || process.env.SMTP_USER || '').trim(),
+};
+const emailDisponivel = !!(SMTP.host && SMTP.remetente);
+const URL_PUBLICA = (process.env.URL_PUBLICA || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '')).trim().replace(/\/+$/, '');
+const INTERVALO_ALERTAS_MS = Math.max(60_000, Number(process.env.MONITOR_INTERVALO_MS) || 300_000);
+const EMAILS_POR_HORA = Number(process.env.MONITOR_EMAILS_POR_HORA) || 60;
+
+let _transporte = null;
+const _emailsEnviados = [];
+async function enviarEmail(para, { assunto, texto }) {
+  if (!emailDisponivel) throw new Error('SMTP não configurado');
+  const corte = Date.now() - 3_600_000;
+  while (_emailsEnviados.length && _emailsEnviados[0] < corte) _emailsEnviados.shift();
+  if (_emailsEnviados.length >= EMAILS_POR_HORA) throw new Error('limite de e-mails por hora atingido');
+  if (!_transporte) {
+    _transporte = require('nodemailer').createTransport({
+      host: SMTP.host, port: SMTP.porta, secure: SMTP.porta === 465,
+      auth: SMTP.usuario ? { user: SMTP.usuario, pass: SMTP.senha } : undefined,
+    });
+  }
+  await _transporte.sendMail({ from: `Agente Trader Monitor <${SMTP.remetente}>`, to: para, subject: assunto, text: texto });
+  _emailsEnviados.push(Date.now());
+}
+
+async function precoAtual(simbolo) {
+  const d = await fetchHistorico(simbolo, '1d');
+  return d.preco;
+}
+
+/** Lê o código do monitor do cabeçalho; responde 400 e devolve null se faltar. */
+function hashDoCodigo(req, res) {
+  const token = String(req.headers['x-monitor-token'] || '');
+  if (!monitor.tokenValido(token)) { res.status(400).json({ erro: 'Código do monitor ausente ou inválido.' }); return null; }
+  return monitor.hashToken(token);
+}
+
+app.get('/api/monitor/conta', limitarDados, exigirSenha, (req, res) => {
+  const hash = hashDoCodigo(req, res);
+  if (!hash) return;
+  const conta = monitorStore.ler(hash);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!conta) return res.status(404).json({ erro: 'Nenhum monitor salvo com este código.', emailDisponivel });
+  res.json({ ...monitor.contaPublica(conta), emailDisponivel });
+});
+
+app.put('/api/monitor/conta', limitarDados, exigirSenha, (req, res) => {
+  const hash = hashDoCodigo(req, res);
+  if (!hash) return;
+  let dados;
+  try { dados = monitor.normalizarConta(req.body); } catch (e) { return res.status(400).json({ erro: e.message }); }
+  const anterior = monitorStore.ler(hash);
+  if (!anterior && monitorStore.total() >= monitor.MAX_CONTAS) {
+    return res.status(507).json({ erro: 'O servidor atingiu o limite de monitores salvos.' });
+  }
+  const conta = {
+    watchlist: dados.watchlist,
+    alertas: monitor.mesclarAlertas(anterior ? anterior.alertas : [], dados.alertas),
+    email: dados.email,
+    criado: anterior ? anterior.criado : Date.now(),
+    atualizado: Date.now(),
+  };
+  try { monitorStore.gravar(hash, conta); } catch (e) { return res.status(500).json({ erro: e.message }); }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ...monitor.contaPublica(conta), emailDisponivel });
+});
+
+const _ultimoTeste = new Map(); // hash -> ts
+app.post('/api/monitor/email-teste', limitar, exigirSenha, async (req, res) => {
+  const hash = hashDoCodigo(req, res);
+  if (!hash) return;
+  if (!emailDisponivel) return res.status(503).json({ erro: 'Envio de e-mail não configurado no servidor (SMTP_HOST/SMTP_FROM).' });
+  const conta = monitorStore.ler(hash);
+  if (!conta || !conta.email) return res.status(400).json({ erro: 'Salve um e-mail no monitor antes de testar.' });
+  const ultimo = _ultimoTeste.get(hash) || 0;
+  if (Date.now() - ultimo < 60_000) return res.status(429).json({ erro: 'Aguarde um minuto para enviar outro teste.' });
+  _ultimoTeste.set(hash, Date.now());
+  try {
+    await enviarEmail(conta.email, {
+      assunto: 'Teste do Monitor — Agente Trader',
+      texto: `Tudo certo: este e-mail vai receber os alertas de preço do Monitor.\n\n${URL_PUBLICA ? `Monitor: ${URL_PUBLICA}/monitor\n\n` : ''}Conteúdo educacional. Alerta de preço não é recomendação de investimento (Resolução CVM 20/2021).`,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    log('erro', 'monitor/email-teste:', e.message);
+    res.status(502).json({ erro: 'Não consegui enviar o e-mail de teste. Confira as variáveis SMTP no servidor.' });
+  }
+});
+
+app.get('/monitor', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
+});
+
 app.get('/robots.txt', (_req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
 app.use('/api', (_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
 
@@ -712,6 +955,12 @@ if (require.main === module) {
     if (!FRED_KEY) console.warn('FRED_API_KEY ausente: /api/eua/indicadores responde 503.');
     if (!BRAPI_KEY) console.warn('BRAPI_API_KEY ausente: /api/br/cotacoes responde 503.');
     if (!EXA_KEY) console.warn('EXA_API_KEY ausente: /api/br/noticias responde 503.');
+    if (!process.env.DADOS_DIR) console.warn(`DADOS_DIR ausente: o monitor grava em ${DADOS_DIR}; no Railway isso se perde a cada deploy (monte um Volume e aponte DADOS_DIR para ele).`);
+    if (!emailDisponivel) console.warn('SMTP_HOST/SMTP_FROM ausentes: alertas do monitor não enviam e-mail.');
+    monitor.criarRotina({
+      store: monitorStore, buscarPreco: precoAtual, enviarEmail: emailDisponivel ? enviarEmail : null,
+      urlMonitor: URL_PUBLICA ? `${URL_PUBLICA}/monitor` : '', intervaloMs: INTERVALO_ALERTAS_MS, log,
+    }).iniciar();
     validarModelo();
   });
 }
