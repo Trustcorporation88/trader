@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor — Agente Trader</title>
+<meta name="description" content="Monitor do Agente Trader: busca de ativos, watchlist, gráficos, notícias e alertas de preço. Educacional, não é recomendação de investimento.">
+<style>
+:root{
+  --fundo:#0b1220;--painel:#111a2b;--painel2:#162238;--borda:#223050;--texto:#e6ecf5;--texto2:#9fb0c9;--apagado:#5b6b85;
+  --acento:#2f7bff;--acento2:#19c8a5;--laranja:#ff7a1a;--alerta:#ffb547;--erro:#ff6b6b;--raio:14px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--fundo);color:var(--texto);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+a{color:var(--acento)}
+button{cursor:pointer;border:1px solid var(--borda);background:var(--painel2);color:var(--texto);border-radius:9px;padding:7px 12px;font:inherit;font-size:.86rem}
+button:hover{border-color:var(--acento)}
+button:disabled{opacity:.5;cursor:default}
+button.primario{background:var(--laranja);border-color:var(--laranja);color:#fff;font-weight:600}
+button.primario:hover{filter:brightness(1.08)}
+input,select{background:#0d1626;color:var(--texto);border:1px solid var(--borda);border-radius:9px;padding:8px 10px;font:inherit;font-size:.9rem}
+input:focus,select:focus{outline:none;border-color:var(--acento)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.alta{color:var(--acento2)}
+.baixa{color:var(--erro)}
+
+/* --- Topo --- */
+header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;padding:10px 20px;background:rgba(17,26,43,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--borda)}
+.marca{display:flex;align-items:center;gap:9px;font-weight:700;font-size:1.05rem;white-space:nowrap}
+.marca .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--laranja),#ffb04a);display:grid;place-items:center;color:#111;font-size:.9rem}
+.marca span{color:var(--laranja)}
+nav{display:flex;gap:4px}
+nav a{color:var(--texto2);text-decoration:none;padding:6px 10px;border-radius:8px;font-size:.88rem}
+nav a:hover,nav a.ativo{color:var(--texto);background:var(--painel2)}
+.busca{position:relative;flex:1;max-width:420px;margin-left:auto}
+.busca input{width:100%;padding-left:34px}
+.busca .lupa{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--apagado);pointer-events:none}
+.resultados{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--painel);border:1px solid var(--borda);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.45);max-height:360px;overflow:auto;display:none;z-index:30}
+.resultados.aberto{display:block}
+.resultados .titulo{font-size:.7rem;letter-spacing:.8px;text-transform:uppercase;color:var(--apagado);padding:8px 12px 4px}
+.resultados button{display:flex;width:100%;gap:10px;align-items:baseline;text-align:left;background:transparent;border:0;border-radius:0;padding:8px 12px}
+.resultados button:hover,.resultados button.foco{background:var(--painel2)}
+.resultados .s{font-family:ui-monospace,monospace;color:var(--laranja);min-width:86px;font-size:.86rem}
+.resultados .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resultados .b{color:var(--apagado);font-size:.75rem}
+.voltar{white-space:nowrap}
+
+/* --- Faixa de cotações --- */
+#faixa{display:flex;gap:18px;overflow-x:auto;padding:7px 20px;background:#0d1626;border-bottom:1px solid var(--borda);font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;scrollbar-width:none}
+#faixa .it{display:flex;gap:6px;white-space:nowrap}
+#faixa .n{color:var(--texto2)}
+
+/* --- Layout --- */
+main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-direction:column;gap:18px}
+.cartao{background:var(--painel);border:1px solid var(--borda);border-radius:var(--raio);padding:16px 18px;min-width:0}
+.cartao>h2{margin:0 0 12px;font-size:1rem;display:flex;align-items:center;gap:8px}
+.cartao>h2 .extra{margin-left:auto;font-weight:400;font-size:.76rem;color:var(--apagado)}
+.etiqueta{display:inline-block;font-size:.66rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--laranja);border:1px solid rgba(255,122,26,.45);background:rgba(255,122,26,.08);border-radius:999px;padding:2px 9px}
+.grade-principal{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px}
+.grade-mercado{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:18px}
+.coluna{display:flex;flex-direction:column;gap:18px;min-width:0}
+
+/* --- Ativo em foco --- */
+.ativo-cab{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 18px}
+.ativo-cab .nome{font-size:1.25rem;font-weight:700;line-height:1.2}
+.ativo-cab .sub{color:var(--texto2);font-size:.82rem}
+.ativo-cab .preco{font:600 1.7rem/1 ui-monospace,monospace}
+.ativo-cab .var{font:600 .95rem ui-monospace,monospace}
+.ativo-cab .acoes{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.periodos{display:flex;gap:4px;margin:14px 0 8px}
+.periodos button{padding:4px 10px;font-size:.78rem;background:transparent}
+.periodos button.ativo{background:var(--painel2);border-color:var(--laranja);color:var(--laranja)}
+#grafico{position:relative;height:320px}
+#grafico svg{width:100%;height:100%;display:block}
+#grafico .dica{position:absolute;pointer-events:none;background:var(--painel2);border:1px solid var(--borda);border-radius:8px;padding:5px 8px;font:12px ui-monospace,monospace;white-space:nowrap;display:none}
+.estatisticas{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:12px}
+.estatisticas div{background:#0d1626;border:1px solid var(--borda);border-radius:9px;padding:7px 10px}
+.estatisticas .r{font-size:.72rem;color:var(--apagado);text-transform:uppercase;letter-spacing:.5px}
+.estatisticas .v{font:600 .95rem ui-monospace,monospace}
+.vazio{color:var(--texto2);font-size:.88rem;padding:10px 0}
+.carregando{color:var(--apagado);font-size:.85rem}
+
+/* --- Watchlist e alertas --- */
+.lista{display:flex;flex-direction:column;gap:6px}
+.linha{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;background:#0d1626;border:1px solid var(--borda);border-radius:10px;padding:8px 10px;cursor:pointer}
+.linha:hover{border-color:var(--acento)}
+.linha.foco{border-color:var(--laranja)}
+.linha .s{font:600 .88rem ui-monospace,monospace}
+.linha .n{font-size:.74rem;color:var(--texto2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+.linha .p{font:.9rem ui-monospace,monospace;text-align:right}
+.linha .v{font:.76rem ui-monospace,monospace;text-align:right}
+.linha .x{background:transparent;border:0;color:var(--apagado);padding:2px 6px;font-size:1rem;line-height:1}
+.linha .x:hover{color:var(--erro)}
+.alerta-linha{display:flex;gap:10px;align-items:center;background:#0d1626;border:1px solid var(--borda);border-radius:10px;padding:8px 10px;font-size:.85rem}
+.alerta-linha .txt{flex:1}
+.alerta-linha .estado{font-size:.7rem;border-radius:999px;padding:1px 8px;border:1px solid var(--borda);color:var(--texto2)}
+.alerta-linha.disparado{border-color:var(--alerta)}
+.alerta-linha.disparado .estado{color:var(--alerta);border-color:var(--alerta)}
+.form-alerta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.form-alerta input,.form-alerta select{width:100%}
+.form-alerta .cheio{grid-column:1/-1}
+.nota{font-size:.74rem;color:var(--apagado);margin-top:8px}
+
+/* --- Notícias --- */
+.abas{display:flex;gap:4px;margin-bottom:12px}
+.abas button{background:transparent;font-size:.82rem}
+.abas button.ativo{background:var(--painel2);border-color:var(--laranja);color:var(--laranja)}
+.noticias{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.noticias a{display:flex;flex-direction:column;gap:6px;background:#0d1626;border:1px solid var(--borda);border-radius:11px;padding:11px 13px;text-decoration:none;color:var(--texto)}
+.noticias a:hover{border-color:var(--acento)}
+.noticias .t{font-weight:600;font-size:.9rem;line-height:1.3}
+.noticias .r{font-size:.8rem;color:var(--texto2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.noticias .m{font-size:.72rem;color:var(--apagado);margin-top:auto}
+
+/* --- Widgets TradingView --- */
+.tv{height:460px;border-radius:10px;overflow:hidden}
+.tv .tradingview-widget-container,.tv .tradingview-widget-container__widget{height:100%;width:100%}
+
+/* --- Rodapé e avisos --- */
+.aviso-cvm{max-width:1400px;margin:0 auto;padding:0 20px 28px;color:var(--apagado);font-size:.76rem;text-align:center}
+.toast{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:60}
+.toast div{background:var(--painel2);border:1px solid var(--alerta);border-radius:10px;padding:10px 14px;max-width:340px;font-size:.86rem;box-shadow:0 10px 26px rgba(0,0,0,.4)}
+
+@media (max-width:1100px){
+  .grade-principal,.grade-mercado{grid-template-columns:1fr}
+}
+@media (max-width:720px){
+  header{flex-wrap:wrap;gap:10px;padding:10px 14px}
+  nav{order:3;width:100%;overflow-x:auto}
+  .busca{order:2;max-width:none;flex-basis:100%}
+  main{padding:14px}
+  #grafico{height:240px}
+  .tv{height:380px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="marca"><div class="logo">◆</div>Agente Trader <span>Monitor</span></div>
+  <nav>
+    <a href="#ativo" class="ativo">Dashboard</a>
+    <a href="#watchlist">Watchlist</a>
+    <a href="#alertas">Alertas</a>
+    <a href="#mercado">Mercado</a>
+    <a href="#noticias">Notícias</a>
+  </nav>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="busca" type="search" placeholder="Buscar ação por nome ou ticker (ex.: Petrobras, AAPL)" autocomplete="off" aria-label="Buscar ativo">
+    <div id="resultados" class="resultados" role="listbox"></div>
+  </div>
+  <a class="voltar" href="/"><button type="button">← Voltar ao chat</button></a>
+</header>
+
+<div id="faixa"><span class="carregando">Carregando cotações…</span></div>
+
+<main>
+  <div class="grade-principal">
+    <section class="cartao" id="ativo">
+      <div id="ativoCab" class="ativo-cab"><span class="carregando">Carregando ativo…</span></div>
+      <div class="periodos" id="periodos">
+        <button data-r="1d">1D</button><button data-r="5d">5D</button><button data-r="1mo" class="ativo">1M</button>
+        <button data-r="6mo">6M</button><button data-r="1y">1A</button><button data-r="5y">5A</button>
+      </div>
+      <div id="grafico"><div class="dica" id="dica"></div></div>
+      <div class="estatisticas" id="estatisticas"></div>
+    </section>
+
+    <div class="coluna">
+      <section class="cartao" id="watchlist">
+        <h2><span class="etiqueta">Watchlist</span> Ativos que você acompanha <span class="extra" id="wlAtualizado"></span></h2>
+        <div class="lista" id="wlLista"></div>
+        <p class="nota">Salva só neste navegador. Clique num ativo para vê-lo no gráfico.</p>
+      </section>
+
+      <section class="cartao" id="alertas">
+        <h2><span class="etiqueta">Alertas</span> Preço-alvo</h2>
+        <div class="lista" id="alLista"></div>
+        <form class="form-alerta" id="alForm">
+          <input id="alSimbolo" class="cheio" placeholder="Ticker (ex.: PETR4.SA, AAPL)" required>
+          <select id="alTipo"><option value="acima">Preço ≥ alvo</option><option value="abaixo">Preço ≤ alvo</option></select>
+          <input id="alAlvo" type="number" step="any" min="0" placeholder="Preço-alvo" required>
+          <button class="primario cheio" type="submit">Criar alerta</button>
+        </form>
+        <p class="nota">Os alertas são checados a cada minuto enquanto esta página estiver aberta, com aviso na tela e notificação do navegador. Monitorar um preço não é sinal de compra ou venda.</p>
+      </section>
+    </div>
+  </div>
+
+  <div class="grade-mercado" id="mercado">
+    <section class="cartao">
+      <h2><span class="etiqueta">Visão geral</span> Mercado <span class="extra">gráficos TradingView</span></h2>
+      <div class="tv" id="tvVisao"></div>
+    </section>
+    <section class="cartao">
+      <h2><span class="etiqueta">Heatmap</span> S&amp;P 500 por setor <span class="extra">TradingView</span></h2>
+      <div class="tv" id="tvHeatmap"></div>
+    </section>
+  </div>
+
+  <section class="cartao" id="noticias">
+    <h2><span class="etiqueta">Notícias</span> Contexto de mercado</h2>
+    <div class="abas" id="abasNoticias">
+      <button data-aba="mercado" class="ativo">Mercado (EUA)</button>
+      <button data-aba="ativo" id="abaAtivo">Do ativo</button>
+    </div>
+    <div class="noticias" id="listaNoticias"><span class="carregando">Carregando notícias…</span></div>
+  </section>
+</main>
+
+<p class="aviso-cvm">Conteúdo educacional e informativo. Não é recomendação de compra, venda ou manutenção de ativos (Resolução CVM 20/2021). Dados de Yahoo Finance, Finnhub, Exa e TradingView podem ter atraso; ativos fora dos EUA podem atrasar 15 minutos ou mais.</p>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const CHAVE_WL = 'trader.monitor.watchlist';
+const CHAVE_AL = 'trader.monitor.alertas';
+const CHAVE_FOCO = 'trader.monitor.foco';
+const WL_PADRAO = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', '^BVSP', 'AAPL', 'NVDA', 'USDBRL=X', 'BTC-USD'];
+const POPULARES = [
+  { symbol: 'PETR4.SA', nome: 'Petrobras PN', bolsa: 'B3' }, { symbol: 'VALE3.SA', nome: 'Vale ON', bolsa: 'B3' },
+  { symbol: 'ITUB4.SA', nome: 'Itaú Unibanco PN', bolsa: 'B3' }, { symbol: 'WEGE3.SA', nome: 'WEG ON', bolsa: 'B3' },
+  { symbol: '^BVSP', nome: 'Ibovespa', bolsa: 'Índice' }, { symbol: 'AAPL', nome: 'Apple', bolsa: 'NASDAQ' },
+  { symbol: 'NVDA', nome: 'NVIDIA', bolsa: 'NASDAQ' }, { symbol: 'MSFT', nome: 'Microsoft', bolsa: 'NASDAQ' },
+  { symbol: 'TSLA', nome: 'Tesla', bolsa: 'NASDAQ' }, { symbol: 'BTC-USD', nome: 'Bitcoin', bolsa: 'Cripto' },
+];
+const MAX_WL = 15;
+const MAX_ALERTAS = 30;
+const SIMBOLO_OK = /^[A-Za-z0-9.^=\-]{1,20}$/;
+
+const $ = (id) => document.getElementById(id);
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function ler(chave, padrao){ try { const v = JSON.parse(localStorage.getItem(chave)); return v == null ? padrao : v; } catch (_) { return padrao; } }
+function gravar(chave, v){ try { localStorage.setItem(chave, JSON.stringify(v)); } catch (_) {} }
+function fmtPreco(v, moeda){
+  if (v == null || !isFinite(v)) return '—';
+  const casas = Math.abs(v) < 10 ? 4 : 2;
+  const n = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: casas });
+  const pref = { BRL: 'R$ ', USD: 'US$ ', EUR: '€ ' }[moeda] || '';
+  return pref + n;
+}
+function fmtVar(v){ if (v == null || !isFinite(v)) return '—'; return (v >= 0 ? '+' : '') + v.toFixed(2).replace('.', ',') + '%'; }
+function classeVar(v){ return v == null ? '' : v >= 0 ? 'alta' : 'baixa'; }
+function fmtData(ms){ if (!ms) return ''; return new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+function ehBR(s){ return /\.SA$/i.test(s); }
+async function getJson(url){
+  const r = await fetch(url);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.erro || ('HTTP ' + r.status));
+  return j;
+}
+function toast(msg){
+  const d = document.createElement('div'); d.textContent = msg; $('toast').appendChild(d);
+  setTimeout(() => d.remove(), 9000);
+}
+
+// ---------- Estado ----------
+let watchlist = ler(CHAVE_WL, null);
+if (!Array.isArray(watchlist)) watchlist = WL_PADRAO.slice();
+let alertas = ler(CHAVE_AL, []);
+if (!Array.isArray(alertas)) alertas = [];
+let foco = ler(CHAVE_FOCO, null) || watchlist[0] || 'PETR4.SA';
+let periodo = '1mo';
+let abaNoticias = 'mercado';
+const cotacoes = {}; // symbol -> { preco, variacao, moeda, nome, ts }
+
+// ---------- Faixa de cotações (reaproveita /api/cotacoes) ----------
+async function carregarFaixa(){
+  try {
+    const d = await getJson('/api/cotacoes');
+    const itens = (d.quoteResponse && d.quoteResponse.result) || [];
+    $('faixa').innerHTML = itens.map((q) =>
+      `<span class="it"><span class="n">${esc(q.shortName || q.symbol)}</span><b>${fmtPreco(q.regularMarketPrice)}</b><span class="${classeVar(q.regularMarketChangePercent)}">${fmtVar(q.regularMarketChangePercent)}</span></span>`
+    ).join('') || '<span class="carregando">Sem cotações agora.</span>';
+  } catch (_) { $('faixa').innerHTML = '<span class="carregando">Cotações indisponíveis no momento.</span>'; }
+}
+
+// ---------- Busca ----------
+let buscaTimer = null, buscaSeq = 0, focoResultado = -1;
+function renderResultados(itens, titulo){
+  const el = $('resultados');
+  focoResultado = -1;
+  if (!itens.length) { el.innerHTML = '<div class="titulo">Nada encontrado</div>'; el.classList.add('aberto'); return; }
+  el.innerHTML = `<div class="titulo">${esc(titulo)}</div>` + itens.map((a) =>
+    `<button type="button" data-s="${esc(a.symbol)}"><span class="s">${esc(a.symbol)}</span><span class="n">${esc(a.nome)}</span><span class="b">${esc(a.bolsa || '')}</span></button>`
+  ).join('');
+  el.classList.add('aberto');
+}
+function fecharResultados(){ $('resultados').classList.remove('aberto'); }
+$('busca').addEventListener('focus', () => { if (!$('busca').value.trim()) renderResultados(POPULARES, 'Populares'); });
+$('busca').addEventListener('input', () => {
+  clearTimeout(buscaTimer);
+  const q = $('busca').value.trim();
+  if (!q) { renderResultados(POPULARES, 'Populares'); return; }
+  buscaTimer = setTimeout(async () => {
+    const seq = ++buscaSeq;
+    try {
+      const d = await getJson('/api/monitor/busca?q=' + encodeURIComponent(q));
+      if (seq === buscaSeq) renderResultados(d.result || [], 'Resultados');
+    } catch (e) { if (seq === buscaSeq) { $('resultados').innerHTML = `<div class="titulo">${esc(e.message)}</div>`; $('resultados').classList.add('aberto'); } }
+  }, 280);
+});
+$('busca').addEventListener('keydown', (ev) => {
+  const botoes = [...$('resultados').querySelectorAll('button')];
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    if (!botoes.length) return;
+    focoResultado = (focoResultado + (ev.key === 'ArrowDown' ? 1 : -1) + botoes.length) % botoes.length;
+    botoes.forEach((b, i) => b.classList.toggle('foco', i === focoResultado));
+    botoes[focoResultado].scrollIntoView({ block: 'nearest' });
+  } else if (ev.key === 'Enter') {
+    ev.preventDefault();
+    const alvo = botoes[focoResultado] || botoes[0];
+    if (alvo) escolher(alvo.dataset.s);
+    else if (SIMBOLO_OK.test($('busca').value.trim())) escolher($('busca').value.trim().toUpperCase());
+  } else if (ev.key === 'Escape') { fecharResultados(); $('busca').blur(); }
+});
+$('resultados').addEventListener('mousedown', (ev) => {
+  const b = ev.target.closest('button[data-s]');
+  if (b) { ev.preventDefault(); escolher(b.dataset.s); }
+});
+document.addEventListener('click', (ev) => { if (!ev.target.closest('.busca')) fecharResultados(); });
+function escolher(simbolo){
+  fecharResultados();
+  $('busca').value = '';
+  $('busca').blur();
+  selecionar(simbolo);
+  $('ativo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------- Ativo em foco + gráfico ----------
+let historicoAtual = null, histSeq = 0;
+function selecionar(simbolo){
+  foco = simbolo;
+  gravar(CHAVE_FOCO, foco);
+  $('alSimbolo').value = foco;
+  renderWatchlist();
+  carregarHistorico();
+  if (abaNoticias === 'ativo') carregarNoticias();
+  atualizarAbaAtivo();
+}
+async function carregarHistorico(){
+  const seq = ++histSeq;
+  $('ativoCab').innerHTML = `<span class="carregando">Carregando ${esc(foco)}…</span>`;
+  $('estatisticas').innerHTML = '';
+  desenharGrafico(null);
+  try {
+    const d = await getJson(`/api/monitor/historico?symbol=${encodeURIComponent(foco)}&range=${periodo}`);
+    if (seq !== histSeq) return;
+    historicoAtual = d;
+    const variacao = d.anterior ? ((d.preco - d.anterior) / d.anterior) * 100 : null;
+    if (periodo === '1d') cotacoes[d.symbol] = { preco: d.preco, variacao, moeda: d.moeda, nome: d.nome, ts: Date.now() };
+    renderCabecalho(d);
+    desenharGrafico(d);
+    renderEstatisticas(d);
+    renderWatchlist();
+  } catch (e) {
+    if (seq !== histSeq) return;
+    historicoAtual = null;
+    $('ativoCab').innerHTML = `<div><div class="nome">${esc(foco)}</div><div class="vazio">Não consegui carregar este ativo: ${esc(e.message)}</div></div>`;
+    desenharGrafico(null, 'Sem dados para o gráfico.');
+  }
+}
+function renderCabecalho(d){
+  const pts = d.pontos;
+  const inicio = pts.length ? pts[0][1] : d.anterior;
+  const varPeriodo = periodo === '1d' ? (d.anterior ? ((d.preco - d.anterior) / d.anterior) * 100 : null) : (inicio ? ((d.preco - inicio) / inicio) * 100 : null);
+  const naLista = watchlist.includes(d.symbol);
+  const rotulo = { '1d': 'no dia', '5d': 'em 5 dias', '1mo': 'em 1 mês', '6mo': 'em 6 meses', '1y': 'em 1 ano', '5y': 'em 5 anos' }[periodo];
+  $('ativoCab').innerHTML = `
+    <div><div class="nome">${esc(d.nome)}</div><div class="sub mono">${esc(d.symbol)} · ${esc(d.bolsa || '')} · ${esc(d.moeda || '')}</div></div>
+    <div><div class="preco">${fmtPreco(d.preco, d.moeda)}</div></div>
+    <div class="var ${classeVar(varPeriodo)}">${fmtVar(varPeriodo)} <span class="sub">${rotulo}</span></div>
+    <div class="acoes">
+      <button type="button" id="btWl">${naLista ? '★ Na watchlist' : '☆ Adicionar à watchlist'}</button>
+      <button type="button" class="primario" id="btAlerta">Criar alerta</button>
+    </div>`;
+  $('btWl').onclick = () => { naLista ? removerWl(d.symbol) : adicionarWl(d.symbol); renderCabecalho(d); };
+  $('btAlerta').onclick = () => {
+    $('alSimbolo').value = d.symbol; $('alAlvo').value = '';
+    $('alertas').scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => $('alAlvo').focus(), 300);
+  };
+}
+function renderEstatisticas(d){
+  const vals = d.pontos.map((p) => p[1]);
+  const max = vals.length ? Math.max(...vals) : null, min = vals.length ? Math.min(...vals) : null;
+  const itens = [
+    [periodo === '1d' ? 'Fech. anterior' : 'Fech. antes do período', fmtPreco(d.anterior, d.moeda)],
+    ['Máx. do período', fmtPreco(max, d.moeda)],
+    ['Mín. do período', fmtPreco(min, d.moeda)],
+    ['Máx. 52 semanas', fmtPreco(d.maxima52, d.moeda)],
+    ['Mín. 52 semanas', fmtPreco(d.minima52, d.moeda)],
+  ];
+  $('estatisticas').innerHTML = itens.map(([r, v]) => `<div><div class="r">${r}</div><div class="v">${v}</div></div>`).join('');
+}
+function desenharGrafico(d, msg){
+  const el = $('grafico');
+  el.querySelectorAll('svg,.vazio').forEach((n) => n.remove());
+  if (!d) { if (msg) el.insertAdjacentHTML('afterbegin', `<div class="vazio">${esc(msg)}</div>`); return; }
+  const pts = d.pontos;
+  if (pts.length < 2) { el.insertAdjacentHTML('afterbegin', '<div class="vazio">Poucos pontos para desenhar o gráfico neste período.</div>'); return; }
+  const W = el.clientWidth || 800, H = el.clientHeight || 320, pe = 8, pd = 64, pt = 10, pb = 24;
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = xs[0], x1 = xs[xs.length - 1];
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (y0 === y1) { y0 *= 0.99; y1 *= 1.01; }
+  const folga = (y1 - y0) * 0.08; y0 -= folga; y1 += folga;
+  const px = (i) => pe + ((xs[i] - x0) / (x1 - x0 || 1)) * (W - pe - pd);
+  const py = (v) => pt + (1 - (v - y0) / (y1 - y0)) * (H - pt - pb);
+  const subiu = ys[ys.length - 1] >= ys[0];
+  const cor = subiu ? '#19c8a5' : '#ff6b6b';
+  const linha = pts.map((p, i) => `${i ? 'L' : 'M'}${px(i).toFixed(1)},${py(p[1]).toFixed(1)}`).join('');
+  const area = `${linha}L${px(pts.length - 1).toFixed(1)},${H - pb}L${px(0).toFixed(1)},${H - pb}Z`;
+  let grade = '';
+  for (let k = 0; k <= 4; k++) {
+    const v = y0 + ((y1 - y0) * k) / 4, y = py(v);
+    grade += `<line x1="${pe}" x2="${W - pd}" y1="${y}" y2="${y}" stroke="#223050" stroke-dasharray="3 4"/>`;
+    grade += `<text x="${W - pd + 6}" y="${y + 4}" fill="#5b6b85" font-size="11" font-family="ui-monospace,monospace">${fmtPreco(v)}</text>`;
+  }
+  const curto = periodo === '1d' || periodo === '5d';
+  const fmtEixo = (ms) => new Date(ms).toLocaleString('pt-BR', curto ? { day: '2-digit', hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: 'short', year: periodo === '5y' ? '2-digit' : undefined });
+  for (let k = 0; k <= 4; k++) {
+    const i = Math.round(((pts.length - 1) * k) / 4);
+    grade += `<text x="${px(i)}" y="${H - 6}" fill="#5b6b85" font-size="11" text-anchor="${k === 0 ? 'start' : k === 4 ? 'end' : 'middle'}">${esc(fmtEixo(xs[i]))}</text>`;
+  }
+  let refAnterior = '';
+  if (periodo === '1d' && d.anterior && d.anterior > y0 && d.anterior < y1) {
+    refAnterior = `<line x1="${pe}" x2="${W - pd}" y1="${py(d.anterior)}" y2="${py(d.anterior)}" stroke="#9fb0c9" stroke-opacity=".5" stroke-dasharray="6 4"/>`;
+  }
+  el.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <defs><linearGradient id="gArea" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${cor}" stop-opacity=".32"/><stop offset="1" stop-color="${cor}" stop-opacity="0"/></linearGradient></defs>
+    ${grade}${refAnterior}
+    <path d="${area}" fill="url(#gArea)"/>
+    <path d="${linha}" fill="none" stroke="${cor}" stroke-width="2" stroke-linejoin="round"/>
+    <line id="mira" y1="${pt}" y2="${H - pb}" stroke="#9fb0c9" stroke-opacity=".6" visibility="hidden"/>
+    <circle id="ponto" r="4" fill="${cor}" stroke="#0b1220" stroke-width="2" visibility="hidden"/>
+    <rect x="0" y="0" width="${W}" height="${H}" fill="transparent" id="captura"/>
+  </svg>`);
+  const svg = el.querySelector('svg'), mira = svg.querySelector('#mira'), ponto = svg.querySelector('#ponto'), dica = $('dica');
+  const esconder = () => { mira.setAttribute('visibility', 'hidden'); ponto.setAttribute('visibility', 'hidden'); dica.style.display = 'none'; };
+  svg.querySelector('#captura').addEventListener('mousemove', (ev) => {
+    const r = svg.getBoundingClientRect();
+    const mx = ((ev.clientX - r.left) / r.width) * W;
+    let i = 0, melhor = Infinity;
+    for (let k = 0; k < pts.length; k++) { const dist = Math.abs(px(k) - mx); if (dist < melhor) { melhor = dist; i = k; } }
+    const x = px(i), y = py(ys[i]);
+    mira.setAttribute('x1', x); mira.setAttribute('x2', x); mira.setAttribute('visibility', 'visible');
+    ponto.setAttribute('cx', x); ponto.setAttribute('cy', y); ponto.setAttribute('visibility', 'visible');
+    dica.innerHTML = `${esc(new Date(xs[i]).toLocaleString('pt-BR', curto ? { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: '2-digit', year: 'numeric' }))} · <b>${fmtPreco(ys[i], d.moeda)}</b>`;
+    dica.style.display = 'block';
+    const esq = (x / W) * r.width;
+    dica.style.left = Math.min(Math.max(esq - dica.offsetWidth / 2, 0), r.width - dica.offsetWidth) + 'px';
+    dica.style.top = '4px';
+  });
+  svg.querySelector('#captura').addEventListener('mouseleave', esconder);
+}
+$('periodos').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-r]');
+  if (!b || b.dataset.r === periodo) return;
+  periodo = b.dataset.r;
+  $('periodos').querySelectorAll('button').forEach((x) => x.classList.toggle('ativo', x === b));
+  carregarHistorico();
+});
+let redimTimer = null;
+window.addEventListener('resize', () => { clearTimeout(redimTimer); redimTimer = setTimeout(() => desenharGrafico(historicoAtual, 'Sem dados para o gráfico.'), 150); });
+
+// ---------- Watchlist ----------
+function adicionarWl(s){
+  if (watchlist.includes(s)) return;
+  if (watchlist.length >= MAX_WL) { toast(`A watchlist aceita até ${MAX_WL} ativos. Remova um para incluir outro.`); return; }
+  watchlist.push(s); gravar(CHAVE_WL, watchlist); renderWatchlist(); atualizarCotacoes([s]);
+}
+function removerWl(s){ watchlist = watchlist.filter((x) => x !== s); gravar(CHAVE_WL, watchlist); renderWatchlist(); }
+function renderWatchlist(){
+  const el = $('wlLista');
+  if (!watchlist.length) { el.innerHTML = '<div class="vazio">Sua watchlist está vazia. Use a busca e toque em “Adicionar à watchlist”.</div>'; return; }
+  el.innerHTML = watchlist.map((s) => {
+    const c = cotacoes[s] || {};
+    return `<div class="linha${s === foco ? ' foco' : ''}" data-s="${esc(s)}">
+      <div><div class="s">${esc(s)}</div><div class="n">${esc(c.nome || '')}</div></div>
+      <div><div class="p">${c.preco != null ? fmtPreco(c.preco, c.moeda) : '…'}</div><div class="v ${classeVar(c.variacao)}">${fmtVar(c.variacao)}</div></div>
+      <button type="button" class="x" data-rm="${esc(s)}" title="Remover">×</button>
+    </div>`;
+  }).join('');
+}
+$('wlLista').addEventListener('click', (ev) => {
+  const rm = ev.target.closest('[data-rm]');
+  if (rm) { ev.stopPropagation(); removerWl(rm.dataset.rm); if (historicoAtual) renderCabecalho(historicoAtual); return; }
+  const l = ev.target.closest('.linha');
+  if (l) selecionar(l.dataset.s);
+});
+
+// O histórico de 1 dia traz o fechamento anterior, então dá a variação do dia
+// (o /api/ativo do painel guiado calcula a variação do mês).
+async function atualizarCotacoes(lista){
+  const simbolos = lista || [...new Set([...watchlist, ...alertas.filter((a) => !a.disparado).map((a) => a.symbol)])];
+  await Promise.allSettled(simbolos.map(async (s) => {
+    const d = await getJson('/api/monitor/historico?range=1d&symbol=' + encodeURIComponent(s));
+    cotacoes[s] = { preco: d.preco, variacao: d.anterior ? ((d.preco - d.anterior) / d.anterior) * 100 : null, moeda: d.moeda, nome: d.nome, ts: Date.now() };
+  }));
+  renderWatchlist();
+  $('wlAtualizado').textContent = 'atualizado ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  checarAlertas();
+}
+
+// ---------- Alertas ----------
+function renderAlertas(){
+  const el = $('alLista');
+  if (!alertas.length) { el.innerHTML = '<div class="vazio">Nenhum alerta. Defina um preço-alvo abaixo.</div>'; return; }
+  el.innerHTML = alertas.map((a) => {
+    const c = cotacoes[a.symbol];
+    const atual = c && c.preco != null ? ` · agora ${fmtPreco(c.preco, c.moeda)}` : '';
+    return `<div class="alerta-linha${a.disparado ? ' disparado' : ''}">
+      <div class="txt"><b class="mono">${esc(a.symbol)}</b> ${a.tipo === 'acima' ? '≥' : '≤'} <b class="mono">${fmtPreco(a.alvo)}</b><span class="nota" style="margin:0">${atual}</span></div>
+      <span class="estado">${a.disparado ? 'atingido ' + fmtData(a.disparado) : 'ativo'}</span>
+      <button type="button" class="x" data-rm="${esc(a.id)}" title="Excluir" style="background:transparent;border:0;color:var(--apagado)">×</button>
+    </div>`;
+  }).join('');
+}
+$('alLista').addEventListener('click', (ev) => {
+  const rm = ev.target.closest('[data-rm]');
+  if (!rm) return;
+  alertas = alertas.filter((a) => a.id !== rm.dataset.rm); gravar(CHAVE_AL, alertas); renderAlertas();
+});
+$('alForm').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const symbol = $('alSimbolo').value.trim().toUpperCase();
+  const alvo = Number($('alAlvo').value);
+  if (!SIMBOLO_OK.test(symbol)) { toast('Ticker inválido. Ex.: PETR4.SA, AAPL, BTC-USD.'); return; }
+  if (!(alvo > 0)) { toast('Informe um preço-alvo maior que zero.'); return; }
+  if (alertas.length >= MAX_ALERTAS) { toast(`Limite de ${MAX_ALERTAS} alertas. Exclua algum antigo.`); return; }
+  alertas.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), symbol, tipo: $('alTipo').value, alvo, criado: Date.now(), disparado: null });
+  gravar(CHAVE_AL, alertas);
+  $('alAlvo').value = '';
+  renderAlertas();
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+  atualizarCotacoes([symbol]);
+});
+function checarAlertas(){
+  let mudou = false;
+  for (const a of alertas) {
+    if (a.disparado) continue;
+    const c = cotacoes[a.symbol];
+    if (!c || c.preco == null) continue;
+    if ((a.tipo === 'acima' && c.preco >= a.alvo) || (a.tipo === 'abaixo' && c.preco <= a.alvo)) {
+      a.disparado = Date.now(); mudou = true;
+      const msg = `${a.symbol} ${a.tipo === 'acima' ? 'chegou a' : 'caiu para'} ${fmtPreco(c.preco, c.moeda)} (alvo ${a.tipo === 'acima' ? '≥' : '≤'} ${fmtPreco(a.alvo)}).`;
+      toast('Alerta atingido: ' + msg);
+      if ('Notification' in window && Notification.permission === 'granted') { try { new Notification('Alerta de preço — Agente Trader', { body: msg }); } catch (_) {} }
+    }
+  }
+  if (mudou) gravar(CHAVE_AL, alertas);
+  renderAlertas();
+}
+
+// ---------- Notícias ----------
+let noticiasSeq = 0;
+function atualizarAbaAtivo(){ $('abaAtivo').textContent = 'Do ativo · ' + foco; }
+$('abasNoticias').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-aba]');
+  if (!b || b.dataset.aba === abaNoticias) return;
+  abaNoticias = b.dataset.aba;
+  $('abasNoticias').querySelectorAll('button').forEach((x) => x.classList.toggle('ativo', x === b));
+  carregarNoticias();
+});
+async function carregarNoticias(){
+  const seq = ++noticiasSeq, el = $('listaNoticias');
+  el.innerHTML = '<span class="carregando">Carregando notícias…</span>';
+  let url;
+  if (abaNoticias === 'mercado') url = '/api/eua/noticias';
+  else if (ehBR(foco)) url = '/api/br/noticias?symbol=' + encodeURIComponent(foco.replace(/\.SA$/i, ''));
+  else if (/^[A-Z][A-Z0-9.\-]{0,9}$/.test(foco)) url = '/api/monitor/noticias?symbol=' + encodeURIComponent(foco);
+  if (!url) { el.innerHTML = `<div class="vazio">Não há notícias por ativo para ${esc(foco)} (índices, moedas e cripto usam a aba Mercado).</div>`; return; }
+  try {
+    const d = await getJson(url);
+    if (seq !== noticiasSeq) return;
+    const itens = d.result || [];
+    el.innerHTML = itens.length ? itens.map((n) => `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">
+      <span class="t">${esc(n.titulo)}</span>${n.resumo ? `<span class="r">${esc(n.resumo)}</span>` : ''}
+      <span class="m">${esc(n.fonte || '')}${n.data ? ' · ' + fmtData(n.data) : ''}</span></a>`).join('')
+      : '<div class="vazio">Nenhuma notícia recente encontrada.</div>';
+  } catch (e) { if (seq === noticiasSeq) el.innerHTML = `<div class="vazio">Notícias indisponíveis: ${esc(e.message)}</div>`; }
+}
+
+// ---------- Widgets TradingView ----------
+function widgetTV(alvo, script, config){
+  const cont = document.createElement('div');
+  cont.className = 'tradingview-widget-container';
+  cont.innerHTML = '<div class="tradingview-widget-container__widget"></div>';
+  const s = document.createElement('script');
+  s.src = 'https://s3.tradingview.com/external-embedding/' + script;
+  s.async = true;
+  s.text = JSON.stringify(config);
+  cont.appendChild(s);
+  $(alvo).appendChild(cont);
+}
+function carregarWidgets(){
+  widgetTV('tvVisao', 'embed-widget-market-overview.js', {
+    colorTheme: 'dark', dateRange: '12M', showChart: true, locale: 'br', width: '100%', height: '100%',
+    isTransparent: true, showSymbolLogo: true, showFloatingTooltip: true,
+    plotLineColorGrowing: 'rgba(25,200,165,1)', plotLineColorFalling: 'rgba(255,107,107,1)',
+    gridLineColor: 'rgba(34,48,80,0.6)', scaleFontColor: 'rgba(159,176,201,1)',
+    belowLineFillColorGrowing: 'rgba(25,200,165,0.12)', belowLineFillColorFalling: 'rgba(255,107,107,0.12)',
+    belowLineFillColorGrowingBottom: 'rgba(25,200,165,0)', belowLineFillColorFallingBottom: 'rgba(255,107,107,0)',
+    symbolActiveColor: 'rgba(255,122,26,0.12)',
+    tabs: [
+      { title: 'Índices', symbols: [
+        { s: 'FOREXCOM:SPXUSD', d: 'S&P 500' }, { s: 'FOREXCOM:NSXUSD', d: 'Nasdaq 100' },
+        { s: 'FOREXCOM:DJI', d: 'Dow Jones' }, { s: 'INDEX:NKY', d: 'Nikkei 225' }, { s: 'INDEX:DEU40', d: 'DAX' } ] },
+      { title: 'Tecnologia', symbols: [
+        { s: 'NASDAQ:AAPL', d: 'Apple' }, { s: 'NASDAQ:MSFT', d: 'Microsoft' }, { s: 'NASDAQ:NVDA', d: 'NVIDIA' },
+        { s: 'NASDAQ:GOOGL', d: 'Alphabet' }, { s: 'NASDAQ:AMZN', d: 'Amazon' }, { s: 'NASDAQ:META', d: 'Meta' } ] },
+      { title: 'Moedas e cripto', symbols: [
+        { s: 'FX_IDC:USDBRL', d: 'Dólar / Real' }, { s: 'FX:EURUSD', d: 'Euro / Dólar' },
+        { s: 'BITSTAMP:BTCUSD', d: 'Bitcoin' }, { s: 'BITSTAMP:ETHUSD', d: 'Ethereum' } ] },
+    ],
+  });
+  widgetTV('tvHeatmap', 'embed-widget-stock-heatmap.js', {
+    exchanges: [], dataSource: 'SPX500', grouping: 'sector', blockSize: 'market_cap_basic', blockColor: 'change',
+    locale: 'br', symbolUrl: '', colorTheme: 'dark', hasTopBar: false, isDataSetEnabled: false, isZoomEnabled: true,
+    hasSymbolTooltip: true, isMonoSize: false, width: '100%', height: '100%',
+  });
+}
+
+// ---------- Navegação ----------
+const secoes = ['ativo', 'watchlist', 'alertas', 'mercado', 'noticias'];
+const links = [...document.querySelectorAll('nav a')];
+const obs = new IntersectionObserver((ents) => {
+  ents.forEach((e) => { if (e.isIntersecting) links.forEach((a) => a.classList.toggle('ativo', a.getAttribute('href') === '#' + e.target.id)); });
+}, { rootMargin: '-45% 0px -50% 0px' });
+secoes.forEach((id) => obs.observe($(id)));
+
+// ---------- Início ----------
+$('alSimbolo').value = foco;
+atualizarAbaAtivo();
+renderWatchlist();
+renderAlertas();
+carregarFaixa();
+carregarHistorico();
+atualizarCotacoes();
+carregarNoticias();
+carregarWidgets();
+setInterval(carregarFaixa, 60_000);
+setInterval(() => atualizarCotacoes(), 60_000);
+</script>
+</body>
+</html>

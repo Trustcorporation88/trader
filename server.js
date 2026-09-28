@@ -701,6 +701,151 @@ app.get('/api/br/noticias', limitarBusca, async (req, res) => {
   }
 });
 
+// ============================================================
+// MONITOR — painel de acompanhamento (public/monitor.html)
+// Busca por nome/ticker e histórico para o gráfico, ambos do Yahoo (sem chave).
+// Watchlist e alertas vivem no localStorage do navegador; nada é gravado aqui.
+// ============================================================
+const YAHOO_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+};
+const SIMBOLO_VALIDO = /^[A-Za-z0-9.^=\-]{1,20}$/;
+const TIPOS_BUSCA = new Set(['EQUITY', 'ETF', 'INDEX', 'CURRENCY', 'CRYPTOCURRENCY', 'MUTUALFUND']);
+
+async function buscarAtivos(termo) {
+  const j = await fetchJson(
+    `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(termo)}&quotesCount=10&newsCount=0&lang=pt-BR&region=BR`,
+    { headers: YAHOO_HEADERS },
+  );
+  const quotes = ((j && j.quotes) || []).filter((q) => q.symbol && TIPOS_BUSCA.has(q.quoteType));
+  // sort estável: papéis da B3 sobem, o resto mantém a relevância do Yahoo
+  quotes.sort((a, b) => (/\.SA$/.test(b.symbol) ? 1 : 0) - (/\.SA$/.test(a.symbol) ? 1 : 0));
+  return quotes
+    .map((q) => ({
+      symbol: q.symbol,
+      nome: (q.longname || q.shortname || q.symbol).replace(/\s{2,}/g, ' ').trim(),
+      bolsa: q.exchDisp || q.exchange || null,
+      tipo: q.quoteType,
+    }));
+}
+
+app.get('/api/monitor/busca', limitarDados, async (req, res) => {
+  const termo = String(req.query.q || '').trim().slice(0, 40);
+  if (termo.length < 1) return res.status(400).json({ erro: 'Informe ?q= com o nome ou ticker.' });
+  const chave = `busca:${termo.toLowerCase()}`;
+  const cache = cacheGet(chave, 600_000, false); // 10 min
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=600'); return res.json(cache); }
+  try {
+    const data = { result: await buscarAtivos(termo) };
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.json(data);
+  } catch (e) {
+    log('erro', 'monitor/busca:', e.message);
+    res.status(502).json({ erro: 'Falha na busca de ativos.' });
+  }
+});
+
+// range -> intervalo das velas e tempo de cache
+const RANGES_HISTORICO = {
+  '1d': { intervalo: '5m', ttl: 60_000 },
+  '5d': { intervalo: '30m', ttl: 300_000 },
+  '1mo': { intervalo: '1d', ttl: 600_000 },
+  '6mo': { intervalo: '1d', ttl: 1_800_000 },
+  '1y': { intervalo: '1d', ttl: 3_600_000 },
+  '5y': { intervalo: '1wk', ttl: 3_600_000 },
+};
+
+async function fetchHistorico(simbolo, range) {
+  const { intervalo } = RANGES_HISTORICO[range];
+  const j = await fetchJson(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(simbolo)}?range=${range}&interval=${intervalo}`,
+    { headers: YAHOO_HEADERS },
+  );
+  const r0 = j && j.chart && j.chart.result && j.chart.result[0];
+  const meta = r0 && r0.meta;
+  if (!meta || meta.regularMarketPrice == null) throw new Error(`sem dados para ${simbolo}`);
+  const ts = r0.timestamp || [];
+  const fech = (r0.indicators && r0.indicators.quote && r0.indicators.quote[0] && r0.indicators.quote[0].close) || [];
+  const pontos = [];
+  ts.forEach((t, i) => { if (fech[i] != null) pontos.push([t * 1000, fech[i]]); });
+  const anterior = meta.chartPreviousClose != null ? meta.chartPreviousClose : meta.previousClose;
+  return {
+    symbol: simbolo,
+    nome: meta.longName || meta.shortName || simbolo,
+    moeda: meta.currency || null,
+    bolsa: meta.fullExchangeName || meta.exchangeName || null,
+    preco: meta.regularMarketPrice,
+    anterior: anterior != null ? anterior : null,
+    maxima52: meta.fiftyTwoWeekHigh != null ? meta.fiftyTwoWeekHigh : null,
+    minima52: meta.fiftyTwoWeekLow != null ? meta.fiftyTwoWeekLow : null,
+    range,
+    pontos,
+  };
+}
+
+app.get('/api/monitor/historico', limitarDados, async (req, res) => {
+  const simbolo = String(req.query.symbol || '').trim().toUpperCase();
+  const range = String(req.query.range || '1mo');
+  if (!SIMBOLO_VALIDO.test(simbolo)) return res.status(400).json({ erro: 'Informe ?symbol= com um ticker válido (ex.: PETR4.SA).' });
+  if (!RANGES_HISTORICO[range]) return res.status(400).json({ erro: `range inválido. Use: ${Object.keys(RANGES_HISTORICO).join(', ')}.` });
+  const chave = `hist:${simbolo}:${range}`;
+  const cache = cacheGet(chave, RANGES_HISTORICO[range].ttl, false);
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=60'); return res.json(cache); }
+  try {
+    const data = await fetchHistorico(simbolo, range);
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    res.json(data);
+  } catch (e) {
+    log('erro', `monitor/historico ${simbolo}:`, e.message);
+    const c = _euaCache.get(chave);
+    if (c) return res.json(c.data);
+    res.status(502).json({ erro: 'Falha ao buscar o histórico do ativo.' });
+  }
+});
+
+// Notícias de uma empresa dos EUA (Finnhub company-news). Ativos da B3 usam /api/br/noticias.
+async function fetchNoticiasEmpresa(simbolo) {
+  const ate = new Date();
+  const de = new Date(ate.getTime() - DIAS_NOTICIA * 24 * 60 * 60 * 1000);
+  const dia = (d) => d.toISOString().slice(0, 10);
+  const j = await fetchJson(
+    `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(simbolo)}&from=${dia(de)}&to=${dia(ate)}&token=${FINNHUB_KEY}`,
+    { timeout: 20_000 },
+  );
+  if (!Array.isArray(j)) throw new Error('resposta de notícias inválida');
+  return j.slice(0, 12).map((n) => ({
+    titulo: n.headline, resumo: n.summary || null, fonte: n.source, url: n.url,
+    data: n.datetime ? n.datetime * 1000 : null, imagem: n.image || null,
+  })).filter((n) => n.titulo && n.url);
+}
+
+app.get('/api/monitor/noticias', limitarDados, async (req, res) => {
+  if (faltaChave(FINNHUB_KEY, 'FINNHUB_API_KEY', res)) return;
+  const simbolo = String(req.query.symbol || '').trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(simbolo)) return res.status(400).json({ erro: 'Informe ?symbol= com um ticker dos EUA (ex.: AAPL).' });
+  const chave = `emp-news:${simbolo}`;
+  const cache = cacheGet(chave, 600_000, false); // 10 min
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=600'); return res.json(cache); }
+  try {
+    const data = { symbol: simbolo, result: await fetchNoticiasEmpresa(simbolo) };
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.json(data);
+  } catch (e) {
+    log('erro', `monitor/noticias ${simbolo}:`, e.message);
+    const c = _euaCache.get(chave);
+    if (c) return res.json(c.data);
+    res.status(502).json({ erro: 'Falha ao buscar notícias da empresa.' });
+  }
+});
+
+app.get('/monitor', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
+});
+
 app.get('/robots.txt', (_req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
 app.use('/api', (_req, res) => res.status(404).json({ erro: 'Rota não encontrada.' }));
 
