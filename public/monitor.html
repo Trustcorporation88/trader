@@ -191,7 +191,6 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
       </div>
       <div id="grafico"><div class="dica" id="dica"></div></div>
       <div id="graficoTV" class="tv-ativo" hidden></div>
-      <p class="nota" id="notaTV" hidden></p>
       <div class="estatisticas" id="estatisticas"></div>
     </section>
 
@@ -702,9 +701,6 @@ function renderTV(){
     locale: 'br', allow_symbol_change: false, hide_side_toolbar: false, calendar: false, support_host: 'https://www.tradingview.com',
     backgroundColor: 'rgba(17,26,43,1)', gridColor: 'rgba(34,48,80,0.5)',
   });
-  const nota = $('notaTV');
-  nota.hidden = !ehBR(foco) && foco !== '^BVSP';
-  nota.textContent = 'O widget gratuito do TradingView nem sempre mostra ativos da B3. Se o gráfico vier vazio, volte para “Simples”.';
 }
 function aplicarModoGrafico(){
   const tv = modoGrafico === 'tv';
@@ -712,7 +708,7 @@ function aplicarModoGrafico(){
   $('periodos').style.visibility = tv ? 'hidden' : '';
   $('grafico').hidden = tv;
   $('graficoTV').hidden = !tv;
-  if (tv) renderTV(); else { $('notaTV').hidden = true; desenharGrafico(historicoAtual, 'Sem dados para o gráfico.'); }
+  if (tv) renderTV(); else desenharGrafico(historicoAtual, 'Sem dados para o gráfico.');
 }
 $('modoGrafico').addEventListener('click', (ev) => {
   const b = ev.target.closest('button[data-m]');
