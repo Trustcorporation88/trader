@@ -12,6 +12,7 @@ const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const { AGENTE_TRADER, CODIGOS_TRADER, CATEGORIAS_TRADER, mensagemInvocaTrader } = require('./trader');
 const monitor = require('./monitor');
+const carteira = require('./carteira');
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
@@ -779,6 +780,7 @@ async function fetchHistorico(simbolo, range) {
     bolsa: meta.fullExchangeName || meta.exchangeName || null,
     preco: meta.regularMarketPrice,
     anterior: anterior != null ? anterior : null,
+    gmtoffset: Number(meta.gmtoffset) || 0, // segundos; o dia do candle é no fuso da bolsa
     maxima52: meta.fiftyTwoWeekHigh != null ? meta.fiftyTwoWeekHigh : null,
     minima52: meta.fiftyTwoWeekLow != null ? meta.fiftyTwoWeekLow : null,
     range,
@@ -791,19 +793,180 @@ app.get('/api/monitor/historico', limitarDados, async (req, res) => {
   const range = String(req.query.range || '1mo');
   if (!SIMBOLO_VALIDO.test(simbolo)) return res.status(400).json({ erro: 'Informe ?symbol= com um ticker válido (ex.: PETR4.SA).' });
   if (!RANGES_HISTORICO[range]) return res.status(400).json({ erro: `range inválido. Use: ${Object.keys(RANGES_HISTORICO).join(', ')}.` });
-  const chave = `hist:${simbolo}:${range}`;
-  const cache = cacheGet(chave, RANGES_HISTORICO[range].ttl, false);
-  if (cache) { res.setHeader('Cache-Control', 'public, max-age=60'); return res.json(cache); }
   try {
-    const data = await fetchHistorico(simbolo, range);
-    cacheSet(chave, data);
+    const data = await historicoComCache(simbolo, range);
     res.setHeader('Cache-Control', 'public, max-age=60');
     res.json(data);
   } catch (e) {
     log('erro', `monitor/historico ${simbolo}:`, e.message);
+    res.status(502).json({ erro: 'Falha ao buscar o histórico do ativo.' });
+  }
+});
+
+/** Histórico com o cache por range; se o Yahoo falhar, devolve a última cópia mesmo vencida. */
+async function historicoComCache(simbolo, range) {
+  const chave = `hist:${simbolo}:${range}`;
+  const cache = cacheGet(chave, RANGES_HISTORICO[range].ttl, false);
+  if (cache) return cache;
+  try {
+    const data = await fetchHistorico(simbolo, range);
+    cacheSet(chave, data);
+    return data;
+  } catch (e) {
+    const c = _euaCache.get(chave);
+    if (c) return c.data;
+    throw e;
+  }
+}
+
+// ---------- Macro Brasil (Banco Central, SGS — sem chave) ----------
+const SERIES_BCB = [
+  { id: 432, nome: 'Selic (meta)', sufixo: '% a.a.' },
+  { id: 4389, nome: 'CDI (anualizado)', sufixo: '% a.a.' },
+  { id: 13522, nome: 'IPCA em 12 meses', sufixo: '%' },
+  { id: 433, nome: 'IPCA do mês', sufixo: '%' },
+  { id: 1, nome: 'Dólar PTAX (venda)', sufixo: '', prefixo: 'R$ ' },
+  { id: 24369, nome: 'Desemprego (PNAD)', sufixo: '%' },
+];
+
+function dataBCB(s) { const [d, m, a] = String(s).split('/'); return `${a}-${m}-${d}`; }
+
+async function fetchSerieBCB(s) {
+  // por intervalo de datas: a série da meta Selic já vem preenchida até a próxima
+  // reunião do Copom, então "últimos N" traria só datas futuras
+  const br = (d) => d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const agora = new Date();
+  const inicio = new Date(agora.getTime() - 120 * 24 * 3600_000);
+  const j = await fetchJson(
+    `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${s.id}/dados?formato=json&dataInicial=${br(inicio)}&dataFinal=${br(agora)}`,
+    { timeout: 15_000 },
+  );
+  if (!Array.isArray(j)) throw new Error(`resposta inválida da série ${s.id}`);
+  const hoje = agora.toISOString().slice(0, 10);
+  const pontos = j.map((p) => ({ data: dataBCB(p.data), valor: Number(p.valor) }))
+    .filter((p) => p.data <= hoje && isFinite(p.valor));
+  if (!pontos.length) throw new Error(`sem dados para a série ${s.id}`);
+  const ult = pontos[pontos.length - 1];
+  const ant = pontos.length > 1 ? pontos[pontos.length - 2] : null;
+  return { id: s.id, nome: s.nome, sufixo: s.sufixo, prefixo: s.prefixo || '', valor: ult.valor, data: ult.data, anterior: ant ? ant.valor : null, dataAnterior: ant ? ant.data : null };
+}
+
+async function macroBR() {
+  const cache = cacheGet('macro-br', 3_600_000, false); // 1 h
+  if (cache) return cache;
+  const res = await Promise.allSettled(SERIES_BCB.map(fetchSerieBCB));
+  const result = res.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  if (!result.length) {
+    const c = _euaCache.get('macro-br');
+    if (c) return c.data;
+    throw new Error('nenhuma série do Banco Central disponível');
+  }
+  const data = { result, fonte: 'Banco Central do Brasil (SGS)' };
+  cacheSet('macro-br', data);
+  return data;
+}
+
+app.get('/api/monitor/macro-br', limitarDados, async (_req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'public, max-age=900');
+    res.json(await macroBR());
+  } catch (e) {
+    log('erro', 'monitor/macro-br:', e.message);
+    res.status(502).json({ erro: 'Falha ao buscar os indicadores do Banco Central.' });
+  }
+});
+
+// ---------- Fundamentos de empresas dos EUA (Finnhub) ----------
+const INDICADORES_FUNDAMENTOS = [
+  { id: 'pl', nome: 'P/L', chaves: ['peTTM', 'peBasicExclExtraTTM', 'peExclExtraTTM'], formato: 'x' },
+  { id: 'pvp', nome: 'P/VP', chaves: ['pbQuarterly', 'pbAnnual'], formato: 'x' },
+  { id: 'psr', nome: 'Preço/Receita', chaves: ['psTTM', 'psAnnual'], formato: 'x' },
+  { id: 'dy', nome: 'Dividend yield', chaves: ['dividendYieldIndicatedAnnual', 'currentDividendYieldTTM'], formato: '%' },
+  { id: 'mb', nome: 'Margem bruta', chaves: ['grossMarginTTM', 'grossMarginAnnual'], formato: '%' },
+  { id: 'mo', nome: 'Margem operacional', chaves: ['operatingMarginTTM', 'operatingMarginAnnual'], formato: '%' },
+  { id: 'ml', nome: 'Margem líquida', chaves: ['netProfitMarginTTM', 'netProfitMarginAnnual'], formato: '%' },
+  { id: 'roe', nome: 'ROE', chaves: ['roeTTM', 'roeRfy'], formato: '%' },
+  { id: 'roa', nome: 'ROA', chaves: ['roaTTM', 'roaRfy'], formato: '%' },
+  { id: 'cresc', nome: 'Receita (cresc. 12m)', chaves: ['revenueGrowthTTMYoy'], formato: '%' },
+  { id: 'div', nome: 'Dívida/Patrimônio', chaves: ['totalDebt/totalEquityQuarterly', 'totalDebt/totalEquityAnnual'], formato: 'x' },
+  { id: 'lc', nome: 'Liquidez corrente', chaves: ['currentRatioQuarterly', 'currentRatioAnnual'], formato: 'x' },
+  { id: 'lpa', nome: 'LPA (12m)', chaves: ['epsTTM', 'epsBasicExclExtraItemsTTM'], formato: 'moeda' },
+  { id: 'beta', nome: 'Beta', chaves: ['beta'], formato: 'x' },
+];
+
+function montarFundamentos(simbolo, perfil, metricas) {
+  const m = (metricas && metricas.metric) || {};
+  const indicadores = INDICADORES_FUNDAMENTOS.map((ind) => {
+    const chave = ind.chaves.find((k) => m[k] != null && isFinite(m[k]));
+    return chave ? { id: ind.id, nome: ind.nome, valor: Number(m[chave]), formato: ind.formato } : null;
+  }).filter(Boolean);
+  const p = perfil || {};
+  if (!p.name && !indicadores.length) return null;
+  return {
+    symbol: simbolo,
+    nome: p.name || simbolo,
+    setor: p.finnhubIndustry || null,
+    pais: p.country || null,
+    bolsa: p.exchange || null,
+    moeda: p.currency || null,
+    logo: p.logo || null,
+    site: p.weburl || null,
+    ipo: p.ipo || null,
+    valorMercadoMilhoes: p.marketCapitalization != null ? Number(p.marketCapitalization) : null,
+    indicadores,
+  };
+}
+
+app.get('/api/monitor/fundamentos', limitarDados, async (req, res) => {
+  if (faltaChave(FINNHUB_KEY, 'FINNHUB_API_KEY', res)) return;
+  const simbolo = String(req.query.symbol || '').trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(simbolo) || /\.SA$/.test(simbolo)) {
+    return res.status(400).json({ erro: 'Fundamentos disponíveis só para ações dos EUA (ex.: AAPL).' });
+  }
+  const chave = `fund:${simbolo}`;
+  const cache = cacheGet(chave, 21_600_000, false); // 6 h
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=3600'); return res.json(cache); }
+  try {
+    const t = encodeURIComponent(FINNHUB_KEY), s = encodeURIComponent(simbolo);
+    const [perfil, metricas] = await Promise.all([
+      fetchJson(`https://finnhub.io/api/v1/stock/profile2?symbol=${s}&token=${t}`, { timeout: 15_000 }),
+      fetchJson(`https://finnhub.io/api/v1/stock/metric?symbol=${s}&metric=all&token=${t}`, { timeout: 15_000 }),
+    ]);
+    const data = montarFundamentos(simbolo, perfil, metricas);
+    if (!data) return res.status(404).json({ erro: `O Finnhub não tem fundamentos para ${simbolo}.` });
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.json(data);
+  } catch (e) {
+    log('erro', `monitor/fundamentos ${simbolo}:`, e.message);
     const c = _euaCache.get(chave);
     if (c) return res.json(c.data);
-    res.status(502).json({ erro: 'Falha ao buscar o histórico do ativo.' });
+    res.status(502).json({ erro: 'Falha ao buscar os fundamentos da empresa.' });
+  }
+});
+
+// ---------- Carteira simulada ----------
+app.post('/api/monitor/carteira', limitar, async (req, res) => {
+  let posicoes;
+  try { posicoes = carteira.normalizarPosicoes(req.body && req.body.posicoes); } catch (e) { return res.status(400).json({ erro: e.message }); }
+  if (!posicoes.length) return res.status(400).json({ erro: 'Adicione ao menos uma posição à carteira.' });
+  const historicos = {};
+  await Promise.allSettled(posicoes.map(async (p) => { historicos[p.symbol] = await historicoComCache(p.symbol, '1y'); }));
+  const [cambio, referencia, macro] = await Promise.allSettled([
+    historicoComCache('USDBRL=X', '1y'), historicoComCache('^BVSP', '1y'), macroBR(),
+  ]);
+  const selic = macro.status === 'fulfilled' ? macro.value.result.find((s) => s.id === 432) : null;
+  try {
+    const analise = carteira.analisarCarteira({
+      posicoes, historicos,
+      cambio: cambio.status === 'fulfilled' ? cambio.value : null,
+      referencia: referencia.status === 'fulfilled' ? referencia.value : null,
+      taxaLivre: selic ? selic.valor / 100 : null,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ...analise, referencia: 'Ibovespa', taxaLivreFonte: selic ? `Selic meta de ${selic.valor.toLocaleString('pt-BR')}% a.a. (Banco Central)` : null });
+  } catch (e) {
+    res.status(422).json({ erro: e.message });
   }
 });
 
@@ -909,6 +1072,7 @@ app.put('/api/monitor/conta', limitarDados, exigirSenha, (req, res) => {
     watchlist: dados.watchlist,
     alertas: monitor.mesclarAlertas(anterior ? anterior.alertas : [], dados.alertas),
     email: dados.email,
+    carteira: dados.carteira !== undefined ? dados.carteira : (anterior && anterior.carteira) || [],
     criado: anterior ? anterior.criado : Date.now(),
     atualizado: Date.now(),
   };
@@ -965,4 +1129,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos };

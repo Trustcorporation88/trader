@@ -75,7 +75,7 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
 #grafico svg{width:100%;height:100%;display:block}
 #grafico .dica{position:absolute;pointer-events:none;background:var(--painel2);border:1px solid var(--borda);border-radius:8px;padding:5px 8px;font:12px ui-monospace,monospace;white-space:nowrap;display:none}
 .estatisticas{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:12px}
-.estatisticas div{background:#0d1626;border:1px solid var(--borda);border-radius:9px;padding:7px 10px}
+.estatisticas > div{background:#0d1626;border:1px solid var(--borda);border-radius:9px;padding:7px 10px}
 .estatisticas .r{font-size:.72rem;color:var(--apagado);text-transform:uppercase;letter-spacing:.5px}
 .estatisticas .v{font:600 .95rem ui-monospace,monospace}
 .vazio{color:var(--texto2);font-size:.88rem;padding:10px 0}
@@ -120,6 +120,49 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
 .sync-linha{display:flex;gap:6px}
 .sync-linha input{flex:1;min-width:0}
 .sync-linha button{white-space:nowrap}
+nav{overflow-x:auto;scrollbar-width:none;min-width:0}
+.analisar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--borda)}
+.analisar label{font-size:.8rem;color:var(--texto2)}
+.analisar select{flex:1;min-width:200px}
+.analisar button{margin-left:auto}
+.empresa-cab{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.empresa-cab img{width:40px;height:40px;border-radius:9px;background:#fff;object-fit:contain;padding:3px}
+.empresa-cab .sub{color:var(--texto2);font-size:.8rem}
+.form-carteira{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;margin-bottom:12px}
+.tabela-wrap{overflow-x:auto}
+.tabela{width:100%;border-collapse:collapse;font-size:.85rem}
+.tabela th{font-weight:500;color:var(--apagado);font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;text-align:right;padding:6px 8px;border-bottom:1px solid var(--borda);white-space:nowrap}
+.tabela td{padding:7px 8px;border-bottom:1px solid rgba(34,48,80,.6);text-align:right;font-family:ui-monospace,monospace;white-space:nowrap}
+.tabela th:first-child,.tabela td:first-child{text-align:left}
+.tabela td .n{display:block;font-family:system-ui,sans-serif;font-size:.72rem;color:var(--texto2);max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.tabela .x{background:transparent;border:0;color:var(--apagado);padding:2px 6px;font-size:1rem}
+.tabela .x:hover{color:var(--erro)}
+.metricas{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:14px 0}
+.metricas > div{background:#0d1626;border:1px solid var(--borda);border-radius:10px;padding:9px 11px}
+.metricas .r{font-size:.7rem;color:var(--apagado);text-transform:uppercase;letter-spacing:.5px}
+.metricas .v{font:600 1.05rem ui-monospace,monospace;margin-top:2px}
+.metricas .d{font-size:.72rem;color:var(--texto2);margin-top:2px}
+.cart-grade{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px;align-items:start}
+.cart-grade h3,.grade-macro h3{font-size:.85rem;margin:0 0 8px;color:var(--texto2);font-weight:600;display:flex;gap:8px;align-items:baseline}
+.cart-grade h3 .extra,.grade-macro h3 .extra{font-weight:400;font-size:.72rem;color:var(--apagado)}
+#cartGrafico{height:240px;position:relative}
+#cartGrafico svg{width:100%;height:100%;display:block}
+.legenda{display:flex;gap:14px;font-size:.75rem;color:var(--texto2);margin-top:4px}
+.legenda i{display:inline-block;width:10px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.correl td{text-align:center;font-size:.78rem;padding:5px 6px}
+.correl th{text-align:center}
+.avisos{color:var(--alerta);font-size:.8rem;margin-top:8px}
+.grade-macro{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.macro-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.macro-grid > div{background:#0d1626;border:1px solid var(--borda);border-radius:10px;padding:9px 11px}
+.macro-grid .r{font-size:.74rem;color:var(--texto2)}
+.macro-grid .v{font:600 1.05rem ui-monospace,monospace;margin-top:2px}
+.macro-grid .d{font-size:.7rem;color:var(--apagado);margin-top:2px}
+@media (max-width:900px){
+  .cart-grade,.grade-macro{grid-template-columns:1fr}
+  .form-carteira{grid-template-columns:1fr 1fr}
+  .form-carteira input:first-child{grid-column:1/-1}
+}
 
 /* --- Notícias --- */
 .abas{display:flex;gap:4px;margin-bottom:12px}
@@ -162,6 +205,8 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
     <a href="#watchlist">Watchlist</a>
     <a href="#alertas">Alertas</a>
     <a href="#sync">Sincronizar</a>
+    <a href="#carteira">Carteira</a>
+    <a href="#macro">Macro</a>
     <a href="#mercado">Mercado</a>
     <a href="#noticias">Notícias</a>
   </nav>
@@ -177,6 +222,7 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
 
 <main>
   <div class="grade-principal">
+    <div class="coluna">
     <section class="cartao" id="ativo">
       <div id="ativoCab" class="ativo-cab"><span class="carregando">Carregando ativo…</span></div>
       <div class="barra-grafico">
@@ -192,7 +238,26 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
       <div id="grafico"><div class="dica" id="dica"></div></div>
       <div id="graficoTV" class="tv-ativo" hidden></div>
       <div class="estatisticas" id="estatisticas"></div>
+      <div class="analisar">
+        <label for="codigoAtivo">Analisar no chat com</label>
+        <select id="codigoAtivo">
+          <option value="/painel-trade">/painel-trade · painel completo</option>
+          <option value="/cenario-base">/cenario-base · cenário principal</option>
+          <option value="/estrutura-preco">/estrutura-preco · topos e fundos</option>
+          <option value="/suporte-resistencia">/suporte-resistencia · zonas</option>
+          <option value="/risco-volatilidade">/risco-volatilidade · risco x volatilidade</option>
+          <option value="/contexto-macro">/contexto-macro · juros, inflação e moeda</option>
+          <option value="/tese-em-uma-pagina">/tese-em-uma-pagina · resumo da tese</option>
+        </select>
+        <button type="button" class="primario" id="btAnalisarAtivo">Analisar no chat →</button>
+      </div>
     </section>
+
+    <section class="cartao" id="empresa">
+      <h2><span class="etiqueta">Empresa</span> <span id="empresaTitulo">Fundamentos</span> <span class="extra" id="empresaFonte"></span></h2>
+      <div id="empresaCorpo"><span class="carregando">Carregando…</span></div>
+    </section>
+    </div>
 
     <div class="coluna">
       <section class="cartao" id="watchlist">
@@ -236,6 +301,31 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
       </section>
     </div>
   </div>
+
+  <section class="cartao" id="carteira">
+    <h2><span class="etiqueta">Carteira simulada</span> Risco e retorno de posições hipotéticas <span class="extra" id="cartPeriodo"></span></h2>
+    <form class="form-carteira" id="cartForm">
+      <input id="cartSimbolo" placeholder="Ticker (ex.: PETR4.SA, AAPL)" required>
+      <input id="cartQtd" type="number" step="any" min="0" placeholder="Quantidade" required>
+      <input id="cartPM" type="number" step="any" min="0" placeholder="Preço médio (opcional)">
+      <button type="submit">Adicionar</button>
+    </form>
+    <div id="cartPosicoes"></div>
+    <div id="cartResultado"></div>
+    <p class="nota">Simulação educacional: os pesos de hoje aplicados ao último ano, com rebalanceamento diário, tudo convertido para reais pelo câmbio de cada dia (Yahoo Finance). Sharpe usa a Selic meta como taxa livre de risco. VaR 95% histórico: em 1 dia a cada 20, a perda da combinação foi maior que esse valor. Resultado passado não garante resultado futuro e nada aqui é recomendação de compra ou venda (Resolução CVM 20/2021).</p>
+  </section>
+
+  <section class="cartao" id="macro">
+    <h2><span class="etiqueta">Macro</span> Juros, inflação e câmbio</h2>
+    <div class="grade-macro">
+      <div><h3>Brasil <span class="extra">Banco Central (SGS)</span></h3><div class="macro-grid" id="macroBR"><span class="carregando">Carregando…</span></div></div>
+      <div><h3>EUA <span class="extra">FRED</span></h3><div class="macro-grid" id="macroEUA"><span class="carregando">Carregando…</span></div></div>
+    </div>
+    <div class="analisar">
+      <span class="nota" style="margin:0">Levar estes números para o chat, junto com o ativo em foco:</span>
+      <button type="button" class="primario" id="btAnalisarMacro">/contexto-macro no chat →</button>
+    </div>
+  </section>
 
   <div class="grade-mercado" id="mercado">
     <section class="cartao">
@@ -392,6 +482,7 @@ function selecionar(simbolo){
   renderWatchlist();
   carregarHistorico();
   renderTV();
+  carregarFundamentos();
   if (abaNoticias === 'ativo') carregarNoticias();
   atualizarAbaAtivo();
 }
@@ -769,12 +860,15 @@ function aplicarDoServidor(d){
     const velho = antes.get(a.id);
     if (a.disparado && velho && !velho.disparado) toast(`Alerta atingido: ${a.symbol} ${a.tipo === 'acima' ? '≥' : '≤'} ${fmtPreco(a.alvo)}` + (a.precoDisparo != null ? ` (preço ${fmtPreco(a.precoDisparo)})` : '') + '.');
   }
+  if (Array.isArray(d.carteira) && JSON.stringify(d.carteira) !== JSON.stringify(carteiraPos)) {
+    carteiraPos = d.carteira; gravar(CHAVE_CART, carteiraPos); renderCarteira(); agendarAnaliseCarteira();
+  }
   gravar(CHAVE_WL, watchlist); gravar(CHAVE_AL, alertas); gravar(CHAVE_EMAIL, emailConta);
   renderWatchlist(); renderAlertas();
   if (historicoAtual) renderCabecalho(historicoAtual);
 }
 function corpoConta(){
-  return { watchlist, email: emailConta, alertas: alertas.map(({ id, symbol, tipo, alvo, criado, disparado }) => ({ id, symbol, tipo, alvo, criado, disparado })) };
+  return { watchlist, email: emailConta, carteira: carteiraPos, alertas: alertas.map(({ id, symbol, tipo, alvo, criado, disparado }) => ({ id, symbol, tipo, alvo, criado, disparado })) };
 }
 function tratarFalha(status, j){
   estadoSync = status === 401 ? 'senha' : 'erro';
@@ -861,8 +955,278 @@ $('syncEmailTeste').onclick = async () => {
   finally { renderSync(); }
 };
 
+// ---------- Formatação extra ----------
+function fmtPct(fracao, casas = 2){ if (fracao == null || !isFinite(fracao)) return '—'; return (fracao * 100).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas }) + '%'; }
+function fmtBRL(v){ if (v == null || !isFinite(v)) return '—'; return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtNum(v, casas = 2){ if (v == null || !isFinite(v)) return '—'; return v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas }); }
+function fmtDia(iso){ if (!iso) return ''; const [a, m, d] = iso.split('-'); return `${d}/${m}/${a}`; }
+function agoraBR(){ return new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+
+// ---------- Analisar no chat ----------
+// O chat lê este rascunho ao abrir e só preenche o campo: quem envia é a pessoa.
+function abrirNoChat(texto){
+  try { localStorage.setItem('trader.rascunho', JSON.stringify({ texto, ts: Date.now() })); } catch (_) { toast('Não consegui passar o texto para o chat.'); return; }
+  location.href = '/';
+}
+function linhaMacro(){
+  const br = (macroBR || []).filter((s) => [432, 13522, 1].includes(s.id)).map((s) => `${s.nome} ${s.prefixo}${fmtNum(s.valor, s.id === 1 ? 4 : 2)}${s.sufixo} (${fmtDia(s.data)})`);
+  const eua = (macroEUA || []).filter((s) => ['FEDFUNDS', 'DGS10', 'UNRATE'].includes(s.id)).map((s) => `${s.nome} ${fmtNum(s.valor)}${s.sufixo} (${fmtDia(s.data)})`);
+  return [br.length ? '- Brasil (Banco Central): ' + br.join('; ') : null, eua.length ? '- EUA (FRED): ' + eua.join('; ') : null].filter(Boolean);
+}
+function rascunhoAtivo(codigo){
+  const d = historicoAtual;
+  if (!d) return null;
+  const rotulo = { '1d': 'no dia', '5d': 'em 5 dias', '1mo': 'em 1 mês', '6mo': 'em 6 meses', '1y': 'em 1 ano', '5y': 'em 5 anos' }[periodo];
+  const vals = d.pontos.map((p) => p[1]);
+  const inicio = periodo === '1d' ? d.anterior : (vals.length ? vals[0] : null);
+  const linhas = [
+    `${codigo} ${d.nome} (${d.symbol}, ${d.bolsa || 'bolsa não informada'}), tempo gráfico diário.`,
+    '',
+    `Dados do Monitor (Yahoo Finance, ${agoraBR()}; podem ter atraso):`,
+    `- Preço: ${fmtPreco(d.preco, d.moeda)}`,
+    `- Variação ${rotulo}: ${fmtVar(inicio ? ((d.preco - inicio) / inicio) * 100 : null)}`,
+    vals.length ? `- Máxima e mínima ${rotulo}: ${fmtPreco(Math.max(...vals), d.moeda)} / ${fmtPreco(Math.min(...vals), d.moeda)}` : null,
+    `- Máxima e mínima de 52 semanas: ${fmtPreco(d.maxima52, d.moeda)} / ${fmtPreco(d.minima52, d.moeda)}`,
+  ];
+  if (fundamentos && fundamentos.symbol === d.symbol && fundamentos.indicadores.length) {
+    linhas.push('', 'Fundamentos (Finnhub, 12 meses quando disponível): ' + fundamentos.indicadores.slice(0, 9).map((i) => `${i.nome} ${fmtIndicador(i)}`).join('; '));
+  }
+  if (codigo === '/contexto-macro') { const m = linhaMacro(); if (m.length) linhas.push('', 'Macro:', ...m); }
+  linhas.push('', 'Objetivo: estudar o ativo de forma educacional, com cenário, invalidação e o que acompanhar. Não quero recomendação de compra ou venda.');
+  return linhas.filter((l) => l != null).join('\n');
+}
+$('btAnalisarAtivo').onclick = () => {
+  const t = rascunhoAtivo($('codigoAtivo').value);
+  if (!t) { toast('Espere o ativo carregar para levar os dados ao chat.'); return; }
+  abrirNoChat(t);
+};
+$('btAnalisarMacro').onclick = () => {
+  const m = linhaMacro();
+  if (!m.length) { toast('Os indicadores macro ainda não carregaram.'); return; }
+  const ativo = historicoAtual ? `${historicoAtual.nome} (${historicoAtual.symbol}), preço ${fmtPreco(historicoAtual.preco, historicoAtual.moeda)}` : foco;
+  abrirNoChat([`/contexto-macro Ativo: ${ativo}.`, '', `Indicadores (${agoraBR()}):`, ...m, '', 'Objetivo: entender, de forma educacional, como juros, inflação e câmbio se relacionam com este ativo. Não quero recomendação de compra ou venda.'].join('\n'));
+};
+
+// ---------- Fundamentos (Finnhub, só EUA) ----------
+let fundamentos = null, fundSeq = 0;
+function fmtIndicador(i){
+  if (i.formato === '%') return fmtNum(i.valor, 2) + '%';
+  if (i.formato === 'moeda') return 'US$ ' + fmtNum(i.valor, 2);
+  return fmtNum(i.valor, 2);
+}
+async function carregarFundamentos(){
+  const seq = ++fundSeq, corpo = $('empresaCorpo');
+  fundamentos = null;
+  $('empresaTitulo').textContent = 'Fundamentos';
+  $('empresaFonte').textContent = '';
+  if (ehBR(foco)) { corpo.innerHTML = '<div class="vazio">Fundamentos de ações da B3 ainda não estão disponíveis: a fonte gratuita (Finnhub) cobre empresas dos EUA.</div>'; return; }
+  if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(foco) || /-USD$/.test(foco)) { corpo.innerHTML = '<div class="vazio">Índices, moedas e cripto não têm indicadores de empresa.</div>'; return; }
+  corpo.innerHTML = '<span class="carregando">Carregando fundamentos…</span>';
+  try {
+    const d = await getJson('/api/monitor/fundamentos?symbol=' + encodeURIComponent(foco));
+    if (seq !== fundSeq) return;
+    fundamentos = d;
+    $('empresaTitulo').textContent = d.nome;
+    $('empresaFonte').textContent = 'Finnhub';
+    const mercado = d.valorMercadoMilhoes != null ? `valor de mercado US$ ${fmtNum(d.valorMercadoMilhoes / 1000, 1)} bi` : '';
+    const sub = [d.setor, d.pais, d.bolsa, mercado].filter(Boolean).map(esc).join(' · ');
+    const logo = d.logo && /^https:\/\//.test(d.logo) ? `<img src="${esc(d.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '';
+    const site = d.site && /^https?:\/\//.test(d.site) ? ` · <a href="${esc(d.site)}" target="_blank" rel="noopener noreferrer">site</a>` : '';
+    corpo.innerHTML = `<div class="empresa-cab">${logo}<div><div class="sub">${sub}${site}</div></div></div>
+      <div class="estatisticas">${d.indicadores.map((i) => `<div><div class="r">${esc(i.nome)}</div><div class="v">${fmtIndicador(i)}</div></div>`).join('') || '<div class="vazio">Sem indicadores.</div>'}</div>
+      <p class="nota">Últimos 12 meses quando disponível. Um indicador isolado não diz se uma ação está cara ou barata: compare com o setor e com o histórico da própria empresa.</p>`;
+  } catch (e) {
+    if (seq === fundSeq) corpo.innerHTML = `<div class="vazio">Fundamentos indisponíveis: ${esc(e.message)}</div>`;
+  }
+}
+
+// ---------- Macro ----------
+let macroBR = null, macroEUA = null;
+function cardMacro(nome, valor, numero, data, anterior, sufixo){
+  const delta = anterior != null && numero != null ? numero - anterior : null;
+  const seta = delta == null || Math.abs(delta) < 1e-9 ? '' : `<span class="${delta > 0 ? 'alta' : 'baixa'}">${delta > 0 ? '▲' : '▼'} ${fmtNum(Math.abs(delta), 2)}</span> · `;
+  return `<div><div class="r">${esc(nome)}</div><div class="v">${valor}${esc(sufixo || '')}</div><div class="d">${seta}${esc(fmtDia(data))}</div></div>`;
+}
+async function carregarMacro(){
+  getJson('/api/monitor/macro-br').then((d) => {
+    macroBR = d.result || [];
+    $('macroBR').innerHTML = macroBR.map((s) => cardMacro(s.nome, esc(s.prefixo) + fmtNum(s.valor, s.id === 1 ? 4 : 2), s.valor, s.data, s.anterior, s.sufixo)).join('') || '<div class="vazio">Sem dados.</div>';
+  }).catch((e) => { $('macroBR').innerHTML = `<div class="vazio">Indisponível: ${esc(e.message)}</div>`; });
+  getJson('/api/eua/indicadores').then((d) => {
+    macroEUA = d.result || [];
+    $('macroEUA').innerHTML = macroEUA.map((s) => cardMacro(s.nome, fmtNum(s.valor, 2), s.valor, s.data, null, s.sufixo)).join('') || '<div class="vazio">Sem dados.</div>';
+  }).catch((e) => { $('macroEUA').innerHTML = `<div class="vazio">Indisponível: ${esc(e.message)}</div>`; });
+}
+
+// ---------- Carteira simulada ----------
+const CHAVE_CART = 'trader.monitor.carteira';
+const MAX_POSICOES = 20;
+let carteiraPos = ler(CHAVE_CART, []);
+if (!Array.isArray(carteiraPos)) carteiraPos = [];
+let cartAnalise = null, cartSeq = 0, cartTimer = null;
+function salvarCarteira(){ gravar(CHAVE_CART, carteiraPos); agendarEnvio(); renderCarteira(); agendarAnaliseCarteira(); }
+function agendarAnaliseCarteira(){ clearTimeout(cartTimer); cartTimer = setTimeout(analisarCarteira, 500); }
+$('cartForm').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const symbol = $('cartSimbolo').value.trim().toUpperCase();
+  const quantidade = Number($('cartQtd').value);
+  const pmTxt = $('cartPM').value.trim();
+  const precoMedio = pmTxt ? Number(pmTxt) : null;
+  if (!SIMBOLO_OK.test(symbol)) { toast('Ticker inválido. Ex.: PETR4.SA, AAPL.'); return; }
+  if (!(quantidade > 0)) { toast('Informe uma quantidade maior que zero.'); return; }
+  if (precoMedio != null && !(precoMedio > 0)) { toast('Preço médio deve ser maior que zero (ou deixe em branco).'); return; }
+  const existente = carteiraPos.find((p) => p.symbol === symbol);
+  if (existente) { existente.quantidade = quantidade; existente.precoMedio = precoMedio; toast(`${symbol} atualizado na carteira.`); }
+  else {
+    if (carteiraPos.length >= MAX_POSICOES) { toast(`A carteira aceita até ${MAX_POSICOES} posições.`); return; }
+    carteiraPos.push({ symbol, quantidade, precoMedio });
+  }
+  $('cartSimbolo').value = ''; $('cartQtd').value = ''; $('cartPM').value = '';
+  salvarCarteira();
+});
+$('cartPosicoes').addEventListener('click', (ev) => {
+  const rm = ev.target.closest('[data-rm]');
+  if (rm) { carteiraPos = carteiraPos.filter((p) => p.symbol !== rm.dataset.rm); salvarCarteira(); return; }
+  const ed = ev.target.closest('[data-ed]');
+  if (ed) {
+    const p = carteiraPos.find((x) => x.symbol === ed.dataset.ed);
+    if (p) { $('cartSimbolo').value = p.symbol; $('cartQtd').value = p.quantidade; $('cartPM').value = p.precoMedio || ''; $('cartQtd').focus(); }
+  }
+});
+function renderCarteira(){
+  const el = $('cartPosicoes');
+  if (!carteiraPos.length) { el.innerHTML = '<div class="vazio">Nenhuma posição. Adicione tickers com quantidades hipotéticas para ver o risco da combinação.</div>'; $('cartResultado').innerHTML = ''; $('cartPeriodo').textContent = ''; return; }
+  const calc = new Map(((cartAnalise && cartAnalise.posicoes) || []).map((p) => [p.symbol, p]));
+  el.innerHTML = `<div class="tabela-wrap"><table class="tabela"><thead><tr>
+      <th>Ativo</th><th>Qtd.</th><th>Preço médio</th><th>Preço</th><th>Valor (R$)</th><th>Peso</th><th>Resultado</th><th>Vol. anual</th><th>Retorno 1a</th><th></th>
+    </tr></thead><tbody>${carteiraPos.map((p) => {
+      const c = calc.get(p.symbol);
+      return `<tr>
+        <td><b>${esc(p.symbol)}</b><span class="n">${esc(c ? c.nome : '')}</span></td>
+        <td>${fmtNum(p.quantidade, p.quantidade % 1 ? 4 : 0)}</td>
+        <td>${p.precoMedio ? fmtPreco(p.precoMedio, c && c.moeda) : '—'}</td>
+        <td>${c ? fmtPreco(c.preco, c.moeda) : '…'}</td>
+        <td>${c ? fmtBRL(c.valor) : '…'}</td>
+        <td>${c ? fmtPct(c.peso, 1) : '…'}</td>
+        <td class="${c && c.resultado != null ? classeVar(c.resultado) : ''}">${c && c.resultado != null ? fmtVar(c.resultado * 100) : '—'}</td>
+        <td>${c ? fmtPct(c.volAnual, 1) : '…'}</td>
+        <td class="${c ? classeVar(c.retornoPeriodo) : ''}">${c ? fmtVar(c.retornoPeriodo * 100) : '…'}</td>
+        <td><button type="button" class="x" data-ed="${esc(p.symbol)}" title="Editar">✎</button><button type="button" class="x" data-rm="${esc(p.symbol)}" title="Remover">×</button></td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+async function analisarCarteira(){
+  const seq = ++cartSeq;
+  if (!carteiraPos.length) { cartAnalise = null; renderCarteira(); return; }
+  $('cartResultado').innerHTML = '<span class="carregando">Calculando risco e retorno…</span>';
+  try {
+    const r = await fetch('/api/monitor/carteira', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ posicoes: carteiraPos }) });
+    const d = await r.json().catch(() => ({}));
+    if (seq !== cartSeq) return;
+    if (!r.ok) throw new Error(d.erro || 'HTTP ' + r.status);
+    cartAnalise = d;
+    renderCarteira();
+    renderResultadoCarteira(d);
+  } catch (e) {
+    if (seq !== cartSeq) return;
+    cartAnalise = null; renderCarteira();
+    $('cartResultado').innerHTML = `<div class="vazio">Não consegui calcular: ${esc(e.message)}</div>`;
+  }
+}
+function renderResultadoCarteira(d){
+  $('cartPeriodo').textContent = `${fmtDia(d.periodo.de)} a ${fmtDia(d.periodo.ate)} · ${d.periodo.pregoes} pregões`;
+  const m = [
+    ['Valor da carteira', fmtBRL(d.total), d.custo != null ? `custo informado ${fmtBRL(d.custo)}` : 'sem preço médio informado'],
+    ['Resultado', d.resultado != null ? `<span class="${classeVar(d.resultado)}">${fmtBRL(d.resultado)}</span>` : '—', d.custo ? fmtVar((d.resultado / d.custo) * 100) + ' sobre o custo' : 'informe o preço médio'],
+    ['Retorno em 1 ano', `<span class="${classeVar(d.retornoPeriodo)}">${fmtVar(d.retornoPeriodo * 100)}</span>`, d.retornoRef != null ? `Ibovespa: ${fmtVar(d.retornoRef * 100)}` : ''],
+    ['Volatilidade anual', fmtPct(d.volAnual, 1), 'desvio dos retornos diários × √252'],
+    ['Sharpe', d.sharpe != null ? fmtNum(d.sharpe, 2) : '—', d.taxaLivreFonte ? 'vs. ' + d.taxaLivreFonte : 'sem taxa livre de risco'],
+    ['VaR 95% (1 dia)', fmtBRL(d.var95Valor), fmtPct(d.var95) + ' da carteira'],
+    ['CVaR 95% (1 dia)', fmtBRL(d.cvar95Valor), 'média dos 5% piores dias'],
+    ['Drawdown máximo', `<span class="baixa">${fmtPct(d.drawdownMaximo.valor, 1)}</span>`, d.drawdownMaximo.de ? `${fmtDia(d.drawdownMaximo.de)} → ${fmtDia(d.drawdownMaximo.ate)}` : ''],
+    ['Beta vs. Ibovespa', d.beta != null ? fmtNum(d.beta, 2) : '—', d.correlacaoRef != null ? `correlação ${fmtNum(d.correlacaoRef, 2)}` : ''],
+  ];
+  const { simbolos, matriz } = d.correlacoes;
+  const cor = (c) => c == null ? 'transparent' : c >= 0 ? `rgba(255,122,26,${(Math.abs(c) * 0.55).toFixed(2)})` : `rgba(47,123,255,${(Math.abs(c) * 0.55).toFixed(2)})`;
+  const correl = simbolos.length > 1 ? `<div class="tabela-wrap"><table class="tabela correl"><thead><tr><th></th>${simbolos.map((s) => `<th>${esc(s)}</th>`).join('')}</tr></thead><tbody>
+    ${matriz.map((linha, i) => `<tr><th style="text-align:left">${esc(simbolos[i])}</th>${linha.map((c) => `<td style="background:${cor(c)}">${c == null ? '—' : fmtNum(c, 2)}</td>`).join('')}</tr>`).join('')}
+    </tbody></table></div><p class="nota">Laranja forte: ativos que andam juntos (a diversificação é menor do que parece). Azul: tendem a se compensar.</p>`
+    : '<div class="vazio">Com dois ou mais ativos aparece a correlação entre eles.</div>';
+  $('cartResultado').innerHTML = `
+    <div class="metricas">${m.map(([r, v, dd]) => `<div><div class="r">${r}</div><div class="v">${v}</div><div class="d">${esc(dd)}</div></div>`).join('')}</div>
+    <div class="cart-grade">
+      <div><h3>Carteira x Ibovespa <span class="extra">base 100, em reais</span></h3><div id="cartGrafico"></div>
+        <div class="legenda"><span><i style="background:var(--laranja)"></i>Carteira</span><span><i style="background:#9fb0c9"></i>Ibovespa</span></div></div>
+      <div><h3>Correlação dos retornos diários</h3>${correl}</div>
+    </div>
+    ${d.avisos.length ? `<div class="avisos">${d.avisos.map(esc).join('<br>')}</div>` : ''}
+    <div class="analisar">
+      <label for="codigoCarteira">Analisar no chat com</label>
+      <select id="codigoCarteira">
+        <option value="/risco-carteira">/risco-carteira · exposição e concentração</option>
+        <option value="/correlacao-posicoes">/correlacao-posicoes · apostas repetidas</option>
+        <option value="/teste-estresse">/teste-estresse · cenários adversos</option>
+        <option value="/drawdown-analise">/drawdown-analise · quedas acumuladas</option>
+      </select>
+      <button type="button" class="primario" id="btAnalisarCarteira">Analisar no chat →</button>
+    </div>`;
+  desenharCarteira(d.serie);
+  $('btAnalisarCarteira').onclick = () => abrirNoChat(rascunhoCarteira($('codigoCarteira').value, d));
+}
+function rascunhoCarteira(codigo, d){
+  const pares = [];
+  const { simbolos, matriz } = d.correlacoes;
+  for (let i = 0; i < simbolos.length; i++) for (let j = i + 1; j < simbolos.length; j++) if (matriz[i][j] != null) pares.push([simbolos[i], simbolos[j], matriz[i][j]]);
+  pares.sort((a, b) => Math.abs(b[2]) - Math.abs(a[2]));
+  return [
+    `${codigo} Carteira SIMULADA com ${d.posicoes.length} posições hipotéticas, valor total ${fmtBRL(d.total)} (convertido para reais).`,
+    '',
+    'Posições (peso, valor, volatilidade anual, retorno em 1 ano):',
+    ...d.posicoes.map((p) => `- ${p.symbol} (${p.nome}, ${p.moeda}): ${fmtPct(p.peso, 1)}, ${fmtBRL(p.valor)}, vol. ${fmtPct(p.volAnual, 1)}, retorno ${fmtVar(p.retornoPeriodo * 100)}`),
+    '',
+    `Métricas do Monitor (${fmtDia(d.periodo.de)} a ${fmtDia(d.periodo.ate)}, ${d.periodo.pregoes} pregões, pesos atuais aplicados ao período, dados do Yahoo Finance):`,
+    `- Retorno ${fmtVar(d.retornoPeriodo * 100)}${d.retornoRef != null ? ` (Ibovespa ${fmtVar(d.retornoRef * 100)})` : ''}; volatilidade anual ${fmtPct(d.volAnual, 1)}`,
+    `- Sharpe ${d.sharpe != null ? fmtNum(d.sharpe, 2) : '—'}${d.taxaLivreFonte ? ' (vs. ' + d.taxaLivreFonte + ')' : ''}`,
+    `- VaR 95% de 1 dia ${fmtBRL(d.var95Valor)} (${fmtPct(d.var95)}); CVaR 95% ${fmtBRL(d.cvar95Valor)}`,
+    `- Drawdown máximo ${fmtPct(d.drawdownMaximo.valor, 1)}${d.drawdownMaximo.de ? ` (${fmtDia(d.drawdownMaximo.de)} a ${fmtDia(d.drawdownMaximo.ate)})` : ''}`,
+    `- Beta vs. Ibovespa ${d.beta != null ? fmtNum(d.beta, 2) : '—'}`,
+    pares.length ? '- Correlações mais fortes: ' + pares.slice(0, 5).map(([a, b, c]) => `${a}/${b} ${fmtNum(c, 2)}`).join('; ') : null,
+    '',
+    'Objetivo: estudar concentração, riscos compartilhados e cenários adversos desta carteira hipotética, de forma educacional. Não quero recomendação de compra, venda ou rebalanceamento.',
+  ].filter((l) => l != null).join('\n');
+}
+function desenharCarteira(serie){
+  const el = $('cartGrafico');
+  if (!el || !serie || serie.length < 2) return;
+  const W = el.clientWidth || 600, H = el.clientHeight || 240, pe = 6, pd = 48, pt = 8, pb = 20;
+  const vals = serie.flatMap((p) => [p[1], p[2]]).filter((v) => v != null);
+  let y0 = Math.min(...vals), y1 = Math.max(...vals);
+  const folga = (y1 - y0) * 0.08 || 1; y0 -= folga; y1 += folga;
+  const px = (i) => pe + (i / (serie.length - 1)) * (W - pe - pd);
+  const py = (v) => pt + (1 - (v - y0) / (y1 - y0)) * (H - pt - pb);
+  const caminho = (k) => serie.map((p, i) => p[k] == null ? '' : `${i ? 'L' : 'M'}${px(i).toFixed(1)},${py(p[k]).toFixed(1)}`).join('');
+  let grade = '';
+  for (let k = 0; k <= 3; k++) {
+    const v = y0 + ((y1 - y0) * k) / 3, y = py(v);
+    grade += `<line x1="${pe}" x2="${W - pd}" y1="${y}" y2="${y}" stroke="#223050" stroke-dasharray="3 4"/><text x="${W - pd + 6}" y="${y + 4}" fill="#5b6b85" font-size="11" font-family="ui-monospace,monospace">${fmtNum(v, 0)}</text>`;
+  }
+  const marcas = W < 520 ? 2 : 4;
+  for (let k = 0; k <= marcas; k++) {
+    const i = Math.round(((serie.length - 1) * k) / marcas);
+    const [a, m] = serie[i][0].split('-');
+    grade += `<text x="${px(i)}" y="${H - 5}" fill="#5b6b85" font-size="11" text-anchor="${k === 0 ? 'start' : k === marcas ? 'end' : 'middle'}">${m}/${a.slice(2)}</text>`;
+  }
+  const base = py(100);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grade}
+    <line x1="${pe}" x2="${W - pd}" y1="${base}" y2="${base}" stroke="#9fb0c9" stroke-opacity=".35"/>
+    <path d="${caminho(2)}" fill="none" stroke="#9fb0c9" stroke-width="1.5" stroke-opacity=".8"/>
+    <path d="${caminho(1)}" fill="none" stroke="#ff7a1a" stroke-width="2"/></svg>`;
+}
+let redimCartTimer = null;
+window.addEventListener('resize', () => { clearTimeout(redimCartTimer); redimCartTimer = setTimeout(() => { if (cartAnalise) desenharCarteira(cartAnalise.serie); }, 200); });
+
 // ---------- Navegação ----------
-const secoes = ['ativo', 'watchlist', 'alertas', 'sync', 'mercado', 'noticias'];
+const secoes = ['ativo', 'watchlist', 'alertas', 'sync', 'carteira', 'macro', 'mercado', 'noticias'];
 const links = [...document.querySelectorAll('nav a')];
 const obs = new IntersectionObserver((ents) => {
   ents.forEach((e) => { if (e.isIntersecting) links.forEach((a) => a.classList.toggle('ativo', a.getAttribute('href') === '#' + e.target.id)); });
@@ -875,6 +1239,10 @@ atualizarAbaAtivo();
 renderWatchlist();
 renderAlertas();
 renderSync();
+renderCarteira();
+analisarCarteira();
+carregarMacro();
+carregarFundamentos();
 aplicarModoGrafico();
 puxarConta();
 setInterval(puxarConta, 60_000);
