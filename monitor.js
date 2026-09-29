@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { normalizarPosicoes } = require('./carteira');
 
 const MAX_WL = 15;
 const MAX_ALERTAS = 30;
@@ -47,7 +48,9 @@ function normalizarConta(corpo) {
   });
   const email = String(c.email || '').trim().toLowerCase();
   if (email && (email.length > 254 || !EMAIL.test(email))) throw new Error('E-mail inválido.');
-  return { watchlist, alertas, email };
+  // ausente = navegador antigo, que não conhece a carteira: o servidor mantém a que já tem
+  const posicoes = c.carteira === undefined ? undefined : normalizarPosicoes(c.carteira);
+  return { watchlist, alertas, email, carteira: posicoes };
 }
 
 /**
@@ -77,6 +80,7 @@ function contaPublica(conta) {
     alertas: conta.alertas.map(({ id, symbol, tipo, alvo, criado, disparado, precoDisparo, notificado }) =>
       ({ id, symbol, tipo, alvo, criado, disparado, precoDisparo: precoDisparo != null ? precoDisparo : null, emailEnviado: notificado > 0 ? notificado : null })),
     email: conta.email,
+    carteira: conta.carteira || [],
     atualizado: conta.atualizado,
   };
 }

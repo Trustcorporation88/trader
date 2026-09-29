@@ -147,5 +147,58 @@ console.log('6. busca na web e erros OK');
   fs.rmSync(dir, { recursive: true, force: true });
   console.log('7. monitor: conta, mesclagem e alertas OK');
 
+  // 8. Carteira simulada e fundamentos
+  const carteira = require('./carteira');
+  const { montarFundamentos } = require('./server');
+  assert.deepStrictEqual(carteira.normalizarPosicoes([{ symbol: 'petr4.sa', quantidade: '10', precoMedio: '' }]),
+    [{ symbol: 'PETR4.SA', quantidade: 10, precoMedio: null }]);
+  assert.throws(() => carteira.normalizarPosicoes([{ symbol: 'AAPL', quantidade: 0 }]), /Quantidade/);
+  assert.throws(() => carteira.normalizarPosicoes([{ symbol: 'AAPL', quantidade: 1 }, { symbol: 'aapl', quantidade: 2 }]), /duas vezes/);
+  assert.throws(() => carteira.normalizarPosicoes(Array.from({ length: 21 }, (_, i) => ({ symbol: `T${i}`, quantidade: 1 }))), /até 20/);
+  const contaComCarteira = monitor.normalizarConta({ watchlist: [], alertas: [], carteira: [{ symbol: 'aapl', quantidade: 2 }] });
+  assert.strictEqual(contaComCarteira.carteira[0].symbol, 'AAPL');
+  assert.strictEqual(monitor.normalizarConta({ watchlist: [], alertas: [] }).carteira, undefined, 'navegador antigo não apaga a carteira');
+
+  assert.strictEqual(carteira.quantil([1, 2, 3, 4, 5], 0.5), 3);
+  assert.strictEqual(carteira.quantil([0, 10], 0.25), 2.5);
+  const dd = carteira.drawdownMaximo([100, 120, 90, 130, 117], ['a', 'b', 'c', 'd', 'e']);
+  assert.ok(Math.abs(dd.valor - -0.25) < 1e-12 && dd.de === 'b' && dd.ate === 'c');
+
+  // 40 pregões; o câmbio vem marcado às 23h UTC do dia anterior (gmtoffset de Londres)
+  const DIA = 86_400_000, t0 = Date.UTC(2026, 0, 5, 13);
+  const serieDe = (fn, { off = 0, deslocar = 0 } = {}) => ({ gmtoffset: off, pontos: Array.from({ length: 40 }, (_, i) => [t0 + i * DIA + deslocar, fn(i)]) });
+  const hA = { nome: 'A', moeda: 'BRL', preco: 20, ...serieDe((i) => (i % 2 ? 11 : 10)) };
+  const hB = { nome: 'B', moeda: 'USD', preco: 50, ...serieDe(() => 50) };
+  const cambio = { preco: 5, ...serieDe(() => 5, { off: 3600, deslocar: -14 * 3600_000 }) };
+  const analise = carteira.analisarCarteira({
+    posicoes: [{ symbol: 'A', quantidade: 100, precoMedio: 10 }, { symbol: 'B', quantidade: 4, precoMedio: null }],
+    historicos: { A: hA, B: hB }, cambio, referencia: null, taxaLivre: 0.10,
+  });
+  assert.strictEqual(analise.total, 100 * 20 + 4 * 50 * 5, 'ativo em dólar convertido pelo câmbio de hoje');
+  assert.strictEqual(analise.posicoes[0].peso, 2000 / 3000);
+  assert.strictEqual(analise.periodo.pregoes, 39, 'câmbio alinhado no mesmo dia, sem pregões extras');
+  assert.strictEqual(analise.resultado, 100 * (20 - 10), 'resultado só das posições com preço médio');
+  assert.strictEqual(analise.posicoes[1].volAnual, 0, 'ativo de preço constante tem volatilidade zero');
+  assert.ok(analise.volAnual > 0 && analise.var95 > 0 && analise.cvar95 >= analise.var95);
+  assert.ok(Math.abs(analise.var95Valor - analise.var95 * analise.total) < 1e-9);
+  assert.ok(analise.drawdownMaximo.valor < 0);
+  assert.ok(analise.sharpe != null && analise.beta === null, 'sem referência não há beta');
+  assert.strictEqual(analise.correlacoes.matriz[0][1], null, 'correlação com série constante é indefinida');
+  assert.strictEqual(analise.serie[0][1], 100);
+  assert.throws(() => carteira.analisarCarteira({
+    posicoes: [{ symbol: 'A', quantidade: 1 }], historicos: { A: { ...hA, pontos: hA.pontos.slice(0, 10) } }, cambio,
+  }), /curto demais/);
+  const soEuro = carteira.analisarCarteira({
+    posicoes: [{ symbol: 'A', quantidade: 1 }, { symbol: 'E', quantidade: 1 }],
+    historicos: { A: hA, E: { ...hB, moeda: 'EUR' } }, cambio,
+  });
+  assert.match(soEuro.avisos[0], /EUR/, 'moeda não suportada vira aviso, não erro');
+
+  const fund = montarFundamentos('AAPL', { name: 'Apple Inc', finnhubIndustry: 'Technology', marketCapitalization: 3e6 },
+    { metric: { peBasicExclExtraTTM: 30.5, dividendYieldIndicatedAnnual: 0.45, netProfitMarginTTM: 24.3, beta: null } });
+  assert.deepStrictEqual(fund.indicadores.map((i) => i.id), ['pl', 'dy', 'ml'], 'usa a chave alternativa e ignora nulos');
+  assert.strictEqual(montarFundamentos('XYZ', {}, { metric: {} }), null, 'sem perfil nem métricas = sem fundamentos');
+  console.log('8. carteira simulada e fundamentos OK');
+
   console.log('\nteste-trader: todos os cenários passaram.');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -100,6 +100,10 @@ Painel de acompanhamento: busca por nome ou ticker, gráfico do ativo (linha sim
 - **Onde ficam os dados:** em `DADOS_DIR/monitor.json`. No Railway o disco do container é apagado a cada deploy, então crie um **Volume** (serviço → Settings → Volumes), monte em `/data` e defina `DADOS_DIR=/data`. Sem isso o monitor funciona, mas as listas salvas somem no próximo deploy.
 - **E-mail (SMTP):** `SMTP_HOST`, `SMTP_PORT` (587 ou 465), `SMTP_USER`, `SMTP_PASS` e `SMTP_FROM`. Serve qualquer provedor SMTP. No Gmail, use `smtp.gmail.com`, porta 587 e uma [senha de app](https://myaccount.google.com/apppasswords), não a senha da conta. Sem SMTP, os disparos aparecem só na tela.
 - Conferência depois do deploy: `GET /api/saude` traz `monitor.dadosPersistentes`, `monitor.gravando` e `monitor.email`.
+- **Carteira simulada:** posições hipotéticas (ticker, quantidade e, se quiser, preço médio). O servidor (`carteira.js`) calcula, em reais, retorno de 1 ano, volatilidade, Sharpe contra a Selic, VaR e CVaR de 95% em 1 dia, drawdown máximo, beta contra o Ibovespa e a correlação entre os ativos. Os pesos de hoje são aplicados ao último ano; ativos em dólar são convertidos pelo câmbio de cada dia. A carteira sincroniza junto com a watchlist.
+- **Macro:** Selic, CDI, IPCA, dólar PTAX e desemprego do Banco Central (SGS, sem chave), ao lado dos indicadores do FRED.
+- **Empresa:** P/L, P/VP, dividend yield, margens, ROE, dívida e beta do Finnhub, para ações dos EUA.
+- **Analisar no chat:** leva o ativo, a carteira ou o macro para o chat já com um dos 100 códigos (`/painel-trade`, `/risco-carteira`, `/contexto-macro` e outros). O texto só aparece no campo do chat; quem envia é a pessoa.
 
 ## Proteções incluídas
 
