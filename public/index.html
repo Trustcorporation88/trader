@@ -452,6 +452,8 @@ try {
     campo.value = String(rascunho.texto).slice(0, 8000);
     campo.style.height = Math.min(240, 24 + campo.value.split('\n').length * 22) + 'px';
     campo.focus();
+    campo.setSelectionRange(0, 0);
+    campo.scrollTop = 0;
   }
 } catch (_) {}
 fetch('/api/codigos').then(r => r.json()).then(d => { categorias = d.categorias || []; renderCodigos(''); }).catch(() => {});
