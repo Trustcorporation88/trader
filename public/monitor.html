@@ -145,8 +145,20 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
 .cart-grade{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px;align-items:start}
 .cart-grade h3,.grade-macro h3{font-size:.85rem;margin:0 0 8px;color:var(--texto2);font-weight:600;display:flex;gap:8px;align-items:baseline}
 .cart-grade h3 .extra,.grade-macro h3 .extra{font-weight:400;font-size:.72rem;color:var(--apagado)}
-#cartGrafico{height:240px;position:relative}
-#cartGrafico svg{width:100%;height:100%;display:block}
+#cartGrafico,#cartFronteira{height:240px;position:relative}
+#cartGrafico svg,#cartFronteira svg{width:100%;height:100%;display:block}
+.tabela tfoot th,.tabela tfoot td{color:var(--texto2);font-size:.8rem;border-bottom:0}
+.form-sim{display:grid;grid-template-columns:2fr 1fr 1fr 1.2fr 1fr auto;gap:8px;margin-bottom:6px}
+.form-sim .preco-linha{display:flex;gap:4px}
+.form-sim .preco-linha input{flex:1;min-width:0}
+.form-sim .preco-linha button{padding:6px 8px;white-space:nowrap}
+.lado-compra{color:var(--acento2);font-weight:600}
+.lado-venda{color:var(--erro);font-weight:600}
+.agenda{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow:auto}
+.agenda > div{display:grid;grid-template-columns:110px 34px 1fr auto;gap:8px;align-items:baseline;background:#0d1626;border:1px solid var(--borda);border-radius:9px;padding:6px 10px;font-size:.82rem}
+.agenda .q{font-family:ui-monospace,monospace;font-size:.74rem;color:var(--texto2);text-align:right;white-space:nowrap}
+.garch{margin-top:12px}
+@media (max-width:900px){ .form-sim{grid-template-columns:1fr 1fr} .form-sim > :first-child{grid-column:1/-1} }
 .legenda{display:flex;gap:14px;font-size:.75rem;color:var(--texto2);margin-top:4px}
 .legenda i{display:inline-block;width:10px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
 .correl td{text-align:center;font-size:.78rem;padding:5px 6px}
@@ -206,6 +218,7 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
     <a href="#alertas">Alertas</a>
     <a href="#sync">Sincronizar</a>
     <a href="#carteira">Carteira</a>
+    <a href="#simulador">Simulador</a>
     <a href="#macro">Macro</a>
     <a href="#mercado">Mercado</a>
     <a href="#noticias">Notícias</a>
@@ -238,6 +251,7 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
       <div id="grafico"><div class="dica" id="dica"></div></div>
       <div id="graficoTV" class="tv-ativo" hidden></div>
       <div class="estatisticas" id="estatisticas"></div>
+      <div class="garch" id="garch"></div>
       <div class="analisar">
         <label for="codigoAtivo">Analisar no chat com</label>
         <select id="codigoAtivo">
@@ -312,7 +326,23 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
     </form>
     <div id="cartPosicoes"></div>
     <div id="cartResultado"></div>
-    <p class="nota">Simulação educacional: os pesos de hoje aplicados ao último ano, com rebalanceamento diário, tudo convertido para reais pelo câmbio de cada dia (Yahoo Finance). Sharpe usa a Selic meta como taxa livre de risco. VaR 95% histórico: em 1 dia a cada 20, a perda da combinação foi maior que esse valor. Resultado passado não garante resultado futuro e nada aqui é recomendação de compra ou venda (Resolução CVM 20/2021).</p>
+    <p class="nota">Simulação educacional: os pesos de hoje aplicados ao último ano, com rebalanceamento diário, tudo convertido para reais pelo câmbio de cada dia (Yahoo Finance). Sharpe e Sortino usam a Selic meta como taxa livre de risco. VaR 95% histórico: em 1 dia a cada 20, a perda da combinação foi maior que esse valor; o paramétrico supõe retornos normais e costuma subestimar quedas fortes. Resultado passado não garante resultado futuro e nada aqui é recomendação de compra ou venda (Resolução CVM 20/2021).</p>
+  </section>
+
+  <section class="cartao" id="simulador">
+    <h2><span class="etiqueta">Simulador</span> Ordens hipotéticas (paper trading) <span class="extra" id="simResumo"></span></h2>
+    <form class="form-sim" id="simForm">
+      <input id="simSimbolo" placeholder="Ticker (ex.: PETR4.SA, AAPL)" required>
+      <select id="simLado"><option value="compra">Compra simulada</option><option value="venda">Venda simulada</option></select>
+      <input id="simQtd" type="number" step="any" min="0" placeholder="Quantidade" required>
+      <div class="preco-linha"><input id="simPreco" type="number" step="any" min="0" placeholder="Preço" required><button type="button" id="simCotacao" title="Preencher com a última cotação do Yahoo Finance">Cotação</button></div>
+      <input id="simCusto" type="number" step="any" min="0" placeholder="Custos (opcional)">
+      <button type="submit" class="primario">Registrar</button>
+    </form>
+    <p class="nota" id="simNotaForm" style="margin:0 0 12px">“Cotação” preenche o último preço; dá para editar e simular outra execução. Custos (corretagem, emolumentos) entram no preço médio da compra e saem do resultado da venda.</p>
+    <div id="simPosicoes"></div>
+    <div id="simResultado"></div>
+    <p class="nota">Nenhuma ordem sai daqui: é um caderno de operações hipotéticas, para treinar processo e registrar decisões. Preço médio ponderado, só posições compradas, totais em reais pelo câmbio de hoje. Resultado simulado não garante resultado real e nada aqui é recomendação de compra ou venda (Resolução CVM 20/2021).</p>
   </section>
 
   <section class="cartao" id="macro">
@@ -320,6 +350,12 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
     <div class="grade-macro">
       <div><h3>Brasil <span class="extra">Banco Central (SGS)</span></h3><div class="macro-grid" id="macroBR"><span class="carregando">Carregando…</span></div></div>
       <div><h3>EUA <span class="extra">FRED</span></h3><div class="macro-grid" id="macroEUA"><span class="carregando">Carregando…</span></div></div>
+    </div>
+    <h3 style="font-size:.85rem;margin:18px 0 8px;color:var(--texto2)">Mundo <span class="extra" style="font-weight:400;font-size:.72rem;color:var(--apagado)">Banco Mundial · último ano disponível por país</span></h3>
+    <div id="macroMundo"><span class="carregando">Carregando…</span></div>
+    <div class="grade-macro" style="margin-top:18px">
+      <div><h3>Juros, CDS e rating por país <span class="extra">Fincept API</span></h3><div id="finceptPaises"><span class="carregando">Carregando…</span></div></div>
+      <div><h3>Agenda econômica · 7 dias <span class="extra">Fincept API (Trading Economics)</span></h3><div id="finceptAgenda"><span class="carregando">Carregando…</span></div></div>
     </div>
     <div class="analisar">
       <span class="nota" style="margin:0">Levar estes números para o chat, junto com o ativo em foco:</span>
@@ -483,8 +519,10 @@ function selecionar(simbolo){
   carregarHistorico();
   renderTV();
   carregarFundamentos();
+  renderGarch();
   if (abaNoticias === 'ativo') carregarNoticias();
   atualizarAbaAtivo();
+  $('simSimbolo').value = foco;
 }
 async function carregarHistorico(){
   const seq = ++histSeq;
@@ -863,12 +901,15 @@ function aplicarDoServidor(d){
   if (Array.isArray(d.carteira) && JSON.stringify(d.carteira) !== JSON.stringify(carteiraPos)) {
     carteiraPos = d.carteira; gravar(CHAVE_CART, carteiraPos); renderCarteira(); agendarAnaliseCarteira();
   }
+  if (Array.isArray(d.ordens) && JSON.stringify(d.ordens) !== JSON.stringify(ordensSim)) {
+    ordensSim = d.ordens; gravar(CHAVE_SIM, ordensSim); agendarAvaliacaoSim();
+  }
   gravar(CHAVE_WL, watchlist); gravar(CHAVE_AL, alertas); gravar(CHAVE_EMAIL, emailConta);
   renderWatchlist(); renderAlertas();
   if (historicoAtual) renderCabecalho(historicoAtual);
 }
 function corpoConta(){
-  return { watchlist, email: emailConta, carteira: carteiraPos, alertas: alertas.map(({ id, symbol, tipo, alvo, criado, disparado }) => ({ id, symbol, tipo, alvo, criado, disparado })) };
+  return { watchlist, email: emailConta, carteira: carteiraPos, ordens: ordensSim, alertas: alertas.map(({ id, symbol, tipo, alvo, criado, disparado }) => ({ id, symbol, tipo, alvo, criado, disparado })) };
 }
 function tratarFalha(status, j){
   estadoSync = status === 401 ? 'senha' : 'erro';
@@ -990,6 +1031,10 @@ function rascunhoAtivo(codigo){
   ];
   if (fundamentos && fundamentos.symbol === d.symbol && fundamentos.indicadores.length) {
     linhas.push('', 'Fundamentos (Finnhub, 12 meses quando disponível): ' + fundamentos.indicadores.slice(0, 9).map((i) => `${i.nome} ${fmtIndicador(i)}`).join('; '));
+  }
+  if (garchResultado && garchResultado.symbol === d.symbol) {
+    const g = garchResultado;
+    linhas.push('', `Volatilidade (GARCH(1,1) via Fincept API, ${g.pregoes} retornos diários): próximo pregão ${fmtPct(g.diaria[0])} (≈ ${fmtPct(g.anual[0], 1)} a.a.); em ${g.passos} pregões ${fmtPct(g.anual[g.anual.length - 1], 1)} a.a.; realizada nos últimos 20 pregões ${fmtPct(g.realizada20, 1)} a.a.`);
   }
   if (codigo === '/contexto-macro') { const m = linhaMacro(); if (m.length) linhas.push('', 'Macro:', ...m); }
   linhas.push('', 'Objetivo: estudar o ativo de forma educacional, com cenário, invalidação e o que acompanhar. Não quero recomendação de compra ou venda.');
@@ -1141,7 +1186,9 @@ function renderResultadoCarteira(d){
     ['Retorno em 1 ano', `<span class="${classeVar(d.retornoPeriodo)}">${fmtVar(d.retornoPeriodo * 100)}</span>`, d.retornoRef != null ? `Ibovespa: ${fmtVar(d.retornoRef * 100)}` : ''],
     ['Volatilidade anual', fmtPct(d.volAnual, 1), 'desvio dos retornos diários × √252'],
     ['Sharpe', d.sharpe != null ? fmtNum(d.sharpe, 2) : '—', d.taxaLivreFonte ? 'vs. ' + d.taxaLivreFonte : 'sem taxa livre de risco'],
-    ['VaR 95% (1 dia)', fmtBRL(d.var95Valor), fmtPct(d.var95) + ' da carteira'],
+    ['Sortino', d.sortino != null ? fmtNum(d.sortino, 2) : '—', 'como o Sharpe, mas só a oscilação para baixo conta'],
+    ['VaR 95% (1 dia)', fmtBRL(d.var95Valor), fmtPct(d.var95) + ' da carteira · histórico'],
+    ['VaR 95% paramétrico', fmtBRL(d.var95ParametricoValor), fmtPct(d.var95Parametrico) + ' · supõe retornos normais'],
     ['CVaR 95% (1 dia)', fmtBRL(d.cvar95Valor), 'média dos 5% piores dias'],
     ['Drawdown máximo', `<span class="baixa">${fmtPct(d.drawdownMaximo.valor, 1)}</span>`, d.drawdownMaximo.de ? `${fmtDia(d.drawdownMaximo.de)} → ${fmtDia(d.drawdownMaximo.ate)}` : ''],
     ['Beta vs. Ibovespa', d.beta != null ? fmtNum(d.beta, 2) : '—', d.correlacaoRef != null ? `correlação ${fmtNum(d.correlacaoRef, 2)}` : ''],
@@ -1159,6 +1206,7 @@ function renderResultadoCarteira(d){
         <div class="legenda"><span><i style="background:var(--laranja)"></i>Carteira</span><span><i style="background:#9fb0c9"></i>Ibovespa</span></div></div>
       <div><h3>Correlação dos retornos diários</h3>${correl}</div>
     </div>
+    ${blocoFronteira(d)}
     ${d.avisos.length ? `<div class="avisos">${d.avisos.map(esc).join('<br>')}</div>` : ''}
     <div class="analisar">
       <label for="codigoCarteira">Analisar no chat com</label>
@@ -1171,7 +1219,46 @@ function renderResultadoCarteira(d){
       <button type="button" class="primario" id="btAnalisarCarteira">Analisar no chat →</button>
     </div>`;
   desenharCarteira(d.serie);
+  desenharFronteira(d.fronteira);
   $('btAnalisarCarteira').onclick = () => abrirNoChat(rascunhoCarteira($('codigoCarteira').value, d));
+}
+function blocoFronteira(d){
+  const f = d.fronteira;
+  if (!f) return '<div class="vazio" style="margin-top:14px">Com dois ou mais ativos aparece a fronteira eficiente da combinação.</div>';
+  const simbolos = d.correlacoes.simbolos;
+  const linhas = simbolos.map((s, i) => `<tr><td><b>${esc(s)}</b></td>${[f.atual, f.minimaVariancia, f.maximoSharpe].map((c) => c ? `<td>${fmtPct(c.pesos[i], 1)}</td>` : '<td>—</td>').join('')}</tr>`).join('');
+  const rodape = (rotulo, k, fmt) => `<tr><th style="text-align:left">${rotulo}</th>${[f.atual, f.minimaVariancia, f.maximoSharpe].map((c) => `<td>${c && c[k] != null ? fmt(c[k]) : '—'}</td>`).join('')}</tr>`;
+  return `<div class="cart-grade" style="margin-top:16px">
+    <div><h3>Fronteira eficiente <span class="extra">${fmtNum(f.simulacoes, 0)} combinações simuladas, só compradas</span></h3><div id="cartFronteira"></div>
+      <div class="legenda"><span><i style="background:#2f7bff"></i>Combinações</span><span><i style="background:var(--laranja)"></i>Atual</span><span><i style="background:var(--acento2)"></i>Mín. variância</span><span><i style="background:var(--alerta)"></i>Máx. Sharpe</span></div></div>
+    <div><h3>Pesos de referência</h3><div class="tabela-wrap"><table class="tabela"><thead><tr><th>Ativo</th><th>Atual</th><th>Mín. variância</th><th>Máx. Sharpe</th></tr></thead>
+      <tbody>${linhas}</tbody><tfoot>${rodape('Retorno médio', 'ret', (v) => fmtVar(v * 100))}${rodape('Volatilidade', 'vol', (v) => fmtPct(v, 1))}${rodape('Sharpe', 'sharpe', (v) => fmtNum(v, 2))}</tfoot></table></div>
+      <p class="nota">Retorno médio e risco do último ano, não previsão. A fronteira mostra o que teria funcionado no passado; com outra janela os pesos mudam bastante. Não é sugestão de rebalanceamento.</p></div>
+  </div>`;
+}
+function desenharFronteira(f){
+  const el = $('cartFronteira');
+  if (!el || !f) return;
+  const W = el.clientWidth || 600, H = el.clientHeight || 240, pe = 46, pd = 10, pt = 8, pb = 28;
+  const todos = [...f.pontos, ...[f.atual, f.minimaVariancia, f.maximoSharpe].filter(Boolean).map((c) => [c.vol, c.ret])];
+  let x0 = Math.min(...todos.map((p) => p[0])), x1 = Math.max(...todos.map((p) => p[0]));
+  let y0 = Math.min(...todos.map((p) => p[1])), y1 = Math.max(...todos.map((p) => p[1]));
+  const fx = (x1 - x0) * 0.06 || 0.01, fy = (y1 - y0) * 0.08 || 0.01;
+  x0 -= fx; x1 += fx; y0 -= fy; y1 += fy;
+  const px = (v) => pe + ((v - x0) / (x1 - x0)) * (W - pe - pd);
+  const py = (v) => pt + (1 - (v - y0) / (y1 - y0)) * (H - pt - pb);
+  let grade = '';
+  for (let k = 0; k <= 3; k++) {
+    const v = y0 + ((y1 - y0) * k) / 3, y = py(v);
+    grade += `<line x1="${pe}" x2="${W - pd}" y1="${y}" y2="${y}" stroke="#223050" stroke-dasharray="3 4"/><text x="${pe - 6}" y="${y + 4}" fill="#5b6b85" font-size="11" text-anchor="end" font-family="ui-monospace,monospace">${fmtPct(v, 0)}</text>`;
+    const vx = x0 + ((x1 - x0) * k) / 3;
+    grade += `<text x="${px(vx)}" y="${H - 12}" fill="#5b6b85" font-size="11" text-anchor="middle" font-family="ui-monospace,monospace">${fmtPct(vx, 0)}</text>`;
+  }
+  grade += `<text x="${W - pd}" y="${H - 1}" fill="#5b6b85" font-size="10" text-anchor="end">volatilidade anual →</text><text x="4" y="${pt + 8}" fill="#5b6b85" font-size="10">retorno</text>`;
+  const nuvem = f.pontos.map((p) => `<circle cx="${px(p[0]).toFixed(1)}" cy="${py(p[1]).toFixed(1)}" r="2" fill="#2f7bff" fill-opacity=".35"/>`).join('');
+  const marca = (c, cor, rotulo) => c ? `<circle cx="${px(c.vol)}" cy="${py(c.ret)}" r="6" fill="${cor}" stroke="#0b1220" stroke-width="2"><title>${rotulo}: retorno ${fmtVar(c.ret * 100)}, volatilidade ${fmtPct(c.vol, 1)}</title></circle>` : '';
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grade}${nuvem}
+    ${marca(f.minimaVariancia, '#19c8a5', 'Mínima variância')}${marca(f.maximoSharpe, '#ffb547', 'Máximo Sharpe')}${marca(f.atual, '#ff7a1a', 'Carteira atual')}</svg>`;
 }
 function rascunhoCarteira(codigo, d){
   const pares = [];
@@ -1187,7 +1274,9 @@ function rascunhoCarteira(codigo, d){
     `Métricas do Monitor (${fmtDia(d.periodo.de)} a ${fmtDia(d.periodo.ate)}, ${d.periodo.pregoes} pregões, pesos atuais aplicados ao período, dados do Yahoo Finance):`,
     `- Retorno ${fmtVar(d.retornoPeriodo * 100)}${d.retornoRef != null ? ` (Ibovespa ${fmtVar(d.retornoRef * 100)})` : ''}; volatilidade anual ${fmtPct(d.volAnual, 1)}`,
     `- Sharpe ${d.sharpe != null ? fmtNum(d.sharpe, 2) : '—'}${d.taxaLivreFonte ? ' (vs. ' + d.taxaLivreFonte + ')' : ''}`,
-    `- VaR 95% de 1 dia ${fmtBRL(d.var95Valor)} (${fmtPct(d.var95)}); CVaR 95% ${fmtBRL(d.cvar95Valor)}`,
+    `- Sortino ${d.sortino != null ? fmtNum(d.sortino, 2) : '—'}`,
+    `- VaR 95% de 1 dia ${fmtBRL(d.var95Valor)} (${fmtPct(d.var95)}, histórico; paramétrico ${fmtPct(d.var95Parametrico)}); CVaR 95% ${fmtBRL(d.cvar95Valor)}`,
+    d.fronteira && d.fronteira.minimaVariancia ? `- Fronteira simulada (${d.fronteira.simulacoes} combinações, só compradas): carteira de mínima variância teria vol. ${fmtPct(d.fronteira.minimaVariancia.vol, 1)} com pesos ${d.correlacoes.simbolos.map((s, i) => `${s} ${fmtPct(d.fronteira.minimaVariancia.pesos[i], 0)}`).join(', ')}` : null,
     `- Drawdown máximo ${fmtPct(d.drawdownMaximo.valor, 1)}${d.drawdownMaximo.de ? ` (${fmtDia(d.drawdownMaximo.de)} a ${fmtDia(d.drawdownMaximo.ate)})` : ''}`,
     `- Beta vs. Ibovespa ${d.beta != null ? fmtNum(d.beta, 2) : '—'}`,
     pares.length ? '- Correlações mais fortes: ' + pares.slice(0, 5).map(([a, b, c]) => `${a}/${b} ${fmtNum(c, 2)}`).join('; ') : null,
@@ -1223,10 +1312,256 @@ function desenharCarteira(serie){
     <path d="${caminho(1)}" fill="none" stroke="#ff7a1a" stroke-width="2"/></svg>`;
 }
 let redimCartTimer = null;
-window.addEventListener('resize', () => { clearTimeout(redimCartTimer); redimCartTimer = setTimeout(() => { if (cartAnalise) desenharCarteira(cartAnalise.serie); }, 200); });
+window.addEventListener('resize', () => { clearTimeout(redimCartTimer); redimCartTimer = setTimeout(() => { if (cartAnalise) { desenharCarteira(cartAnalise.serie); desenharFronteira(cartAnalise.fronteira); } }, 200); });
+
+// ---------- Simulador de ordens (paper trading) ----------
+const CHAVE_SIM = 'trader.monitor.ordens';
+const MAX_ORDENS = 300;
+let ordensSim = ler(CHAVE_SIM, []);
+if (!Array.isArray(ordensSim)) ordensSim = [];
+let simAnalise = null, simSeq = 0, simTimer = null;
+const simMoeda = {}; // symbol -> moeda da última cotação consultada
+function agendarAvaliacaoSim(){ clearTimeout(simTimer); simTimer = setTimeout(avaliarSim, 400); }
+function salvarOrdens(){ gravar(CHAVE_SIM, ordensSim); agendarEnvio(); renderSim(); agendarAvaliacaoSim(); }
+// mesma regra do servidor: venda acima da posição não conta
+function posicaoLocal(symbol){
+  let q = 0;
+  ordensSim.filter((o) => o.symbol === symbol).sort((a, b) => a.ts - b.ts).forEach((o) => {
+    if (o.lado === 'compra') q += o.quantidade; else if (o.quantidade <= q + 1e-9) q -= o.quantidade;
+  });
+  return q;
+}
+async function cotacaoSim(symbol){
+  const d = await getJson('/api/monitor/historico?range=1d&symbol=' + encodeURIComponent(symbol));
+  if (d.moeda) simMoeda[d.symbol] = String(d.moeda).toUpperCase();
+  return d;
+}
+$('simCotacao').onclick = async () => {
+  const s = $('simSimbolo').value.trim().toUpperCase();
+  if (!SIMBOLO_OK.test(s)) { toast('Informe um ticker válido. Ex.: PETR4.SA, AAPL.'); return; }
+  $('simCotacao').disabled = true;
+  try {
+    const d = await cotacaoSim(s);
+    $('simPreco').value = d.preco;
+    $('simNotaForm').textContent = `${d.nome}: ${fmtPreco(d.preco, d.moeda)} (Yahoo Finance, pode ter atraso). Posição simulada atual: ${fmtNum(posicaoLocal(s), posicaoLocal(s) % 1 ? 4 : 0)}.`;
+  } catch (e) { toast(`Sem cotação para ${s}: ${e.message}`); }
+  finally { $('simCotacao').disabled = false; }
+};
+$('simForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const symbol = $('simSimbolo').value.trim().toUpperCase();
+  const lado = $('simLado').value;
+  const quantidade = Number($('simQtd').value);
+  const preco = Number($('simPreco').value);
+  const custoTxt = $('simCusto').value.trim();
+  const custo = custoTxt ? Number(custoTxt) : 0;
+  if (!SIMBOLO_OK.test(symbol)) { toast('Ticker inválido. Ex.: PETR4.SA, AAPL.'); return; }
+  if (!(quantidade > 0)) { toast('Informe uma quantidade maior que zero.'); return; }
+  if (!(preco > 0)) { toast('Informe o preço (ou use o botão Cotação).'); return; }
+  if (!(custo >= 0)) { toast('Custos devem ser zero ou mais.'); return; }
+  if (ordensSim.length >= MAX_ORDENS) { toast(`O simulador guarda até ${MAX_ORDENS} ordens. Exclua as mais antigas.`); return; }
+  if (lado === 'venda') {
+    const q = posicaoLocal(symbol);
+    if (quantidade > q + 1e-9) { toast(`Posição simulada de ${symbol}: ${fmtNum(q, q % 1 ? 4 : 0)}. O simulador não faz venda a descoberto.`); return; }
+  }
+  let moeda = simMoeda[symbol] || (ordensSim.find((o) => o.symbol === symbol && o.moeda) || {}).moeda;
+  if (!moeda) {
+    try { moeda = (await cotacaoSim(symbol)).moeda; } catch (_) { toast(`Não encontrei ${symbol} no Yahoo Finance. Confira o ticker.`); return; }
+  }
+  ordensSim.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), symbol, lado, quantidade, preco, custo, ts: Date.now(), moeda: moeda ? String(moeda).toUpperCase() : null });
+  $('simQtd').value = ''; $('simPreco').value = ''; $('simCusto').value = '';
+  toast(`${lado === 'compra' ? 'Compra' : 'Venda'} simulada registrada: ${fmtNum(quantidade, quantidade % 1 ? 4 : 0)} ${symbol} a ${fmtPreco(preco, moeda)}.`);
+  salvarOrdens();
+});
+$('simPosicoes').addEventListener('click', (ev) => {
+  const rm = ev.target.closest('[data-rm-ordem]');
+  if (!rm) return;
+  const o = ordensSim.find((x) => x.id === rm.dataset.rmOrdem);
+  if (!o || !confirm(`Excluir a ${o.lado} de ${o.quantidade} ${o.symbol}? As posições e o resultado são recalculados.`)) return;
+  ordensSim = ordensSim.filter((x) => x.id !== o.id);
+  salvarOrdens();
+});
+function fmtQtd(q){ return fmtNum(q, q % 1 ? 4 : 0); }
+function renderSim(){
+  const el = $('simPosicoes');
+  if (!ordensSim.length) {
+    el.innerHTML = '<div class="vazio">Nenhuma ordem simulada. Registre uma compra hipotética para começar o caderno de operações.</div>';
+    $('simResultado').innerHTML = ''; $('simResumo').textContent = ''; return;
+  }
+  const d = simAnalise;
+  const pos = d ? d.posicoes : [];
+  const tabelaPos = !d ? '<span class="carregando">Calculando posições…</span>' : `<div class="tabela-wrap"><table class="tabela"><thead><tr>
+      <th>Ativo</th><th>Qtd.</th><th>Preço médio</th><th>Preço</th><th>Valor</th><th>Resultado aberto</th><th>Realizado</th><th>Custos</th>
+    </tr></thead><tbody>${pos.map((p) => `<tr>
+      <td><b>${esc(p.symbol)}</b><span class="n">${esc(p.quantidade > 0 ? p.nome : 'posição encerrada')}</span></td>
+      <td>${fmtQtd(p.quantidade)}</td>
+      <td>${p.precoMedio != null ? fmtPreco(p.precoMedio, p.moeda) : '—'}</td>
+      <td>${p.preco != null ? fmtPreco(p.preco, p.moeda) : '—'}</td>
+      <td>${p.valor != null ? fmtPreco(p.valor, p.moeda) : '—'}</td>
+      <td class="${classeVar(p.naoRealizado)}">${p.naoRealizado != null ? `${fmtPreco(p.naoRealizado, p.moeda)} <span class="n">${fmtVar(p.retornoAberto * 100)}</span>` : '—'}</td>
+      <td class="${p.realizado ? classeVar(p.realizado) : ''}">${p.realizado ? fmtPreco(p.realizado, p.moeda) : '—'}</td>
+      <td>${p.custos ? fmtPreco(p.custos, p.moeda) : '—'}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+  const recentes = ordensSim.slice().sort((a, b) => b.ts - a.ts);
+  const historico = `<h3 style="font-size:.85rem;margin:16px 0 8px;color:var(--texto2)">Ordens registradas <span class="extra" style="font-weight:400;font-size:.72rem;color:var(--apagado)">${recentes.length} de até ${MAX_ORDENS}${recentes.length > 50 ? ' · mostrando as 50 mais recentes' : ''}</span></h3>
+    <div class="tabela-wrap"><table class="tabela"><thead><tr><th>Data</th><th>Ativo</th><th>Lado</th><th>Qtd.</th><th>Preço</th><th>Custos</th><th></th></tr></thead>
+    <tbody>${recentes.slice(0, 50).map((o) => `<tr>
+      <td>${esc(new Date(o.ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }))}</td>
+      <td><b>${esc(o.symbol)}</b></td>
+      <td class="lado-${o.lado}">${o.lado}</td>
+      <td>${fmtQtd(o.quantidade)}</td>
+      <td>${fmtPreco(o.preco, o.moeda)}</td>
+      <td>${o.custo ? fmtPreco(o.custo, o.moeda) : '—'}</td>
+      <td><button type="button" class="x" data-rm-ordem="${esc(o.id)}" title="Excluir ordem">×</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+  el.innerHTML = tabelaPos + historico;
+}
+function renderResultadoSim(d){
+  const t = d.totais, e = d.estatisticas;
+  const abertas = d.posicoes.filter((p) => p.quantidade > 0).length;
+  $('simResumo').textContent = `${abertas} posição(ões) aberta(s) · ${e.operacoes} operação(ões) encerrada(s)`;
+  const m = [
+    ['Valor em aberto', fmtBRL(t.valor), d.cambio ? `dólar a ${fmtPreco(d.cambio, 'BRL')}` : 'posições a mercado'],
+    ['Resultado aberto', `<span class="${classeVar(t.naoRealizado)}">${fmtBRL(t.naoRealizado)}</span>`, 'ainda não realizado'],
+    ['Resultado realizado', `<span class="${classeVar(t.realizado)}">${fmtBRL(t.realizado)}</span>`, `custos somados: ${fmtBRL(t.custos)}`],
+    ['Operações encerradas', fmtNum(e.operacoes, 0), e.operacoes ? `${e.acertos} com ganho` : 'cada venda conta como uma'],
+    ['Taxa de acerto', e.operacoes ? fmtPct(e.taxaAcerto, 0) : '—', e.operacoes && e.operacoes < 30 ? 'amostra pequena: pouco conclusiva' : ''],
+    ['Payoff', e.payoff != null ? fmtNum(e.payoff, 2) : '—', 'ganho médio ÷ perda média (em %)'],
+    ['Expectativa por operação', e.operacoes ? `<span class="${classeVar(e.expectativa)}">${fmtVar(e.expectativa * 100)}</span>` : '—', 'acerto × ganho médio + erro × perda média'],
+    ['Maior sequência de perdas', e.operacoes ? fmtNum(e.sequenciaPerdas, 0) : '—', e.operacoes ? `melhor ${fmtVar(e.melhor * 100)} · pior ${fmtVar(e.pior * 100)}` : ''],
+  ];
+  $('simResultado').innerHTML = `
+    <div class="metricas">${m.map(([r, v, dd]) => `<div><div class="r">${r}</div><div class="v">${v}</div><div class="d">${esc(dd)}</div></div>`).join('')}</div>
+    ${d.avisos.length ? `<div class="avisos">${d.avisos.map(esc).join('<br>')}</div>` : ''}
+    <div class="analisar">
+      <label for="codigoSim">Analisar no chat com</label>
+      <select id="codigoSim">
+        <option value="/diario-trade">/diario-trade · registro padronizado</option>
+        <option value="/expectativa-estatistica">/expectativa-estatistica · acerto e payoff</option>
+        <option value="/dashboard-performance">/dashboard-performance · painel de desempenho</option>
+        <option value="/revisao-semanal">/revisao-semanal · processo x resultado</option>
+        <option value="/custos-operacionais">/custos-operacionais · taxas e slippage</option>
+      </select>
+      <button type="button" class="primario" id="btAnalisarSim">Analisar no chat →</button>
+    </div>`;
+  $('btAnalisarSim').onclick = () => abrirNoChat(rascunhoSim($('codigoSim').value, d));
+}
+function rascunhoSim(codigo, d){
+  const t = d.totais, e = d.estatisticas;
+  const ordens = ordensSim.slice().sort((a, b) => a.ts - b.ts).slice(-30);
+  return [
+    `${codigo} Caderno de operações SIMULADAS do Monitor (paper trading, nenhuma ordem real).`,
+    '',
+    `Ordens (${ordens.length}${ordensSim.length > 30 ? ` mais recentes de ${ordensSim.length}` : ''}):`,
+    ...ordens.map((o) => `- ${fmtDia(new Date(o.ts).toISOString().slice(0, 10))} ${o.lado} ${fmtQtd(o.quantidade)} ${o.symbol} a ${fmtPreco(o.preco, o.moeda)}${o.custo ? `, custos ${fmtPreco(o.custo, o.moeda)}` : ''}`),
+    '',
+    'Posições (preço médio ponderado):',
+    ...d.posicoes.map((p) => `- ${p.symbol}: ${p.quantidade > 0 ? `${fmtQtd(p.quantidade)} a PM ${fmtPreco(p.precoMedio, p.moeda)}, preço ${fmtPreco(p.preco, p.moeda)}, aberto ${p.naoRealizado != null ? fmtPreco(p.naoRealizado, p.moeda) : '—'}` : 'encerrada'}; realizado ${fmtPreco(p.realizado, p.moeda)}`),
+    '',
+    `Totais em reais (câmbio de hoje): aberto ${fmtBRL(t.naoRealizado)}, realizado ${fmtBRL(t.realizado)}, custos ${fmtBRL(t.custos)}.`,
+    e.operacoes ? `Operações encerradas: ${e.operacoes}; acerto ${fmtPct(e.taxaAcerto, 0)}; ganho médio ${e.ganhoMedio != null ? fmtVar(e.ganhoMedio * 100) : '—'}; perda média ${e.perdaMedia != null ? fmtVar(e.perdaMedia * 100) : '—'}; payoff ${e.payoff != null ? fmtNum(e.payoff, 2) : '—'}; expectativa ${fmtVar(e.expectativa * 100)} por operação; maior sequência de perdas ${e.sequenciaPerdas}.` : 'Ainda não há operações encerradas.',
+    '',
+    'Objetivo: revisar processo, disciplina e estatística destas operações hipotéticas, de forma educacional. Não quero recomendação de compra ou venda.',
+  ].join('\n');
+}
+async function avaliarSim(){
+  const seq = ++simSeq;
+  if (!ordensSim.length) { simAnalise = null; renderSim(); return; }
+  try {
+    const r = await fetch('/api/monitor/simulador', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ordens: ordensSim }) });
+    const d = await r.json().catch(() => ({}));
+    if (seq !== simSeq) return;
+    if (!r.ok) throw new Error(d.erro || 'HTTP ' + r.status);
+    simAnalise = d;
+    renderSim();
+    renderResultadoSim(d);
+  } catch (e) {
+    if (seq !== simSeq) return;
+    simAnalise = null; renderSim();
+    $('simPosicoes').innerHTML = `<div class="vazio">Não consegui calcular: ${esc(e.message)}</div>`;
+  }
+}
+
+// ---------- Mundo (Banco Mundial) ----------
+async function carregarMundo(){
+  try {
+    const d = await getJson('/api/monitor/mundo');
+    const fmt = (ind, v) => ind.sufixo ? fmtNum(v.valor, 1) + ind.sufixo : fmtNum(v.valor, 0);
+    $('macroMundo').innerHTML = `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Indicador</th>${d.paises.map((p) => `<th>${esc(p.nome)}</th>`).join('')}</tr></thead>
+      <tbody>${d.result.map((ind) => `<tr><td>${esc(ind.nome)}</td>${d.paises.map((p) => {
+        const v = ind.valores[p.id];
+        return `<td>${v ? `${fmt(ind, v)}<span class="n" style="text-align:right">${v.ano}</span>` : '—'}</td>`;
+      }).join('')}</tr>`).join('')}</tbody></table></div>
+      <p class="nota">Dados anuais e revisados com atraso: servem de pano de fundo estrutural, não de leitura do momento.</p>`;
+  } catch (e) { $('macroMundo').innerHTML = `<div class="vazio">Indisponível: ${esc(e.message)}</div>`; }
+}
+
+// ---------- Fincept API (opcional) ----------
+let finceptOk = false;
+const NOTA_FINCEPT = 'Opcional: configure FINCEPT_API_KEY no servidor (conta grátis em fincept.in, com 350 créditos que não renovam).';
+function fmtFincept(c){ return c.numero ? fmtNum(c.valor, 2) : esc(c.valor); }
+function fmtDataEvento(s){
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  return m ? `${m[3]}/${m[2]}${m[4] ? ` ${m[4]}:${m[5]}` : ''}` : esc(s);
+}
+async function carregarFincept(){
+  if (!finceptOk) {
+    $('finceptPaises').innerHTML = `<div class="vazio">${esc(NOTA_FINCEPT)}</div>`;
+    $('finceptAgenda').innerHTML = `<div class="vazio">${esc(NOTA_FINCEPT)}</div>`;
+    return;
+  }
+  getJson('/api/fincept/paises').then((d) => {
+    const rotulos = [...new Set(d.result.flatMap((p) => p.campos.map((c) => c.rotulo)))];
+    $('finceptPaises').innerHTML = `<div class="tabela-wrap"><table class="tabela"><thead><tr><th></th>${d.result.map((p) => `<th>${esc(p.pais)}</th>`).join('')}</tr></thead>
+      <tbody>${rotulos.map((r) => `<tr><td>${esc(r)}</td>${d.result.map((p) => { const c = p.campos.find((x) => x.rotulo === r); return `<td>${c ? fmtFincept(c) : '—'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+      <p class="nota">CDS e juro longo medem quanto o mercado cobra pelo risco de cada país. Unidades como vieram da fonte.</p>`;
+  }).catch((e) => { $('finceptPaises').innerHTML = `<div class="vazio">Indisponível: ${esc(e.message)}</div>`; });
+  getJson('/api/fincept/agenda').then((d) => {
+    const q = (rot, v) => (v == null || v === '' ? '' : `${rot} ${esc(v)}`);
+    $('finceptAgenda').innerHTML = d.result.length ? `<div class="agenda">${d.result.slice(0, 60).map((e) => `<div>
+        <span class="mono">${fmtDataEvento(e.data)}</span><b class="mono">${esc(e.pais)}</b>
+        <span>${esc(e.evento)}${e.importancia ? ` <span class="nota" style="margin:0">· imp. ${esc(e.importancia)}</span>` : ''}</span>
+        <span class="q">${[q('atual', e.atual), q('prev.', e.previsao), q('ant.', e.anterior)].filter(Boolean).join(' · ')}</span>
+      </div>`).join('')}</div><p class="nota">Divulgações costumam aumentar a volatilidade em volta do horário. Horários como vieram da fonte.</p>`
+      : '<div class="vazio">Nenhum evento de Brasil ou EUA nos próximos 7 dias.</div>';
+  }).catch((e) => { $('finceptAgenda').innerHTML = `<div class="vazio">Indisponível: ${esc(e.message)}</div>`; });
+}
+
+// ---------- Volatilidade prevista (GARCH via Fincept) ----------
+let garchResultado = null, garchSeq = 0;
+function renderGarch(msg){
+  const el = $('garch');
+  if (!finceptOk) { el.innerHTML = ''; return; }
+  const r = garchResultado && garchResultado.symbol === foco ? garchResultado : null;
+  if (r) {
+    const ult = r.anual.length - 1;
+    el.innerHTML = `<div class="estatisticas">
+        <div><div class="r">GARCH · próximo pregão</div><div class="v">${fmtPct(r.diaria[0])}</div></div>
+        <div><div class="r">Equivale ao ano</div><div class="v">${fmtPct(r.anual[0], 1)}</div></div>
+        <div><div class="r">GARCH · em ${r.passos} pregões</div><div class="v">${fmtPct(r.anual[ult], 1)} a.a.</div></div>
+        <div><div class="r">Realizada (20 pregões)</div><div class="v">${fmtPct(r.realizada20, 1)} a.a.</div></div>
+      </div>
+      <p class="nota">GARCH(1,1) ajustado pela Fincept API em ${fmtNum(r.pregoes, 0)} retornos diários${r.doCache ? ' (resultado em cache, sem novo custo)' : ''}. Estima a oscilação típica, não a direção do preço.</p>`;
+    return;
+  }
+  el.innerHTML = `<button type="button" id="btGarch">Prever volatilidade com GARCH (Fincept · 2 créditos)</button>${msg ? ` <span class="nota">${esc(msg)}</span>` : ''}`;
+  $('btGarch').onclick = carregarGarch;
+}
+async function carregarGarch(){
+  const seq = ++garchSeq, simbolo = foco;
+  $('btGarch').disabled = true; $('btGarch').textContent = 'Ajustando o modelo…';
+  try {
+    const r = await fetch('/api/fincept/garch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: simbolo }) });
+    const d = await r.json().catch(() => ({}));
+    if (seq !== garchSeq || simbolo !== foco) return;
+    if (!r.ok) throw new Error(d.erro || 'HTTP ' + r.status);
+    garchResultado = d;
+    renderGarch();
+  } catch (e) { if (seq === garchSeq) renderGarch(e.message); }
+}
 
 // ---------- Navegação ----------
-const secoes = ['ativo', 'watchlist', 'alertas', 'sync', 'carteira', 'macro', 'mercado', 'noticias'];
+const secoes = ['ativo', 'watchlist', 'alertas', 'sync', 'carteira', 'simulador', 'macro', 'mercado', 'noticias'];
 const links = [...document.querySelectorAll('nav a')];
 const obs = new IntersectionObserver((ents) => {
   ents.forEach((e) => { if (e.isIntersecting) links.forEach((a) => a.classList.toggle('ativo', a.getAttribute('href') === '#' + e.target.id)); });
@@ -1241,7 +1576,12 @@ renderAlertas();
 renderSync();
 renderCarteira();
 analisarCarteira();
+renderSim();
+avaliarSim();
+$('simSimbolo').value = foco;
 carregarMacro();
+carregarMundo();
+getJson('/api/saude').then((s) => { finceptOk = !!s.fincept; }).catch(() => {}).finally(() => { renderGarch(); carregarFincept(); });
 carregarFundamentos();
 aplicarModoGrafico();
 puxarConta();
