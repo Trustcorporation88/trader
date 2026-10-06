@@ -13,6 +13,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { AGENTE_TRADER, CODIGOS_TRADER, CATEGORIAS_TRADER, mensagemInvocaTrader } = require('./trader');
 const monitor = require('./monitor');
 const carteira = require('./carteira');
+const simulador = require('./simulador');
+const dadosGlobais = require('./dados-globais');
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY || '').trim();
@@ -162,7 +164,7 @@ function podarAnexosAntigos(historico) {
 app.get('/api/saude', (_req, res) => res.json({
   ok: true, chave: !!client, modelo: MODEL, modeloValido, effort: EFFORT, senha: !!SENHA_ACESSO, codigos: CODIGOS_TRADER.length,
   // conferir depois do deploy se as Variables chegaram
-  finnhub: !!FINNHUB_KEY, fred: !!FRED_KEY, brapi: !!BRAPI_KEY, exa: !!EXA_KEY,
+  finnhub: !!FINNHUB_KEY, fred: !!FRED_KEY, brapi: !!BRAPI_KEY, exa: !!EXA_KEY, fincept: !!FINCEPT_KEY,
   monitor: { dadosPersistentes: !!process.env.DADOS_DIR, gravando: monitorStore.saudavel(), email: emailDisponivel },
 }));
 
@@ -970,6 +972,137 @@ app.post('/api/monitor/carteira', limitar, async (req, res) => {
   }
 });
 
+// ---------- Simulador de ordens (paper trading) ----------
+app.post('/api/monitor/simulador', limitar, async (req, res) => {
+  let ordens;
+  try { ordens = simulador.normalizarOrdens(req.body && req.body.ordens); } catch (e) { return res.status(400).json({ erro: e.message }); }
+  const consolidado = simulador.consolidarOrdens(ordens);
+  const abertas = consolidado.posicoes.filter((p) => p.quantidade > 0).map((p) => p.symbol);
+  const cotacoes = {};
+  await Promise.allSettled(abertas.map(async (s) => {
+    const h = await historicoComCache(s, '1d');
+    cotacoes[s] = { preco: h.preco, moeda: h.moeda, nome: h.nome };
+  }));
+  const precisaCambio = consolidado.posicoes.some((p) => (p.moeda || (cotacoes[p.symbol] || {}).moeda) === 'USD');
+  let cambio = null;
+  if (precisaCambio) { try { cambio = (await historicoComCache('USDBRL=X', '1d')).preco; } catch (_) {} }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ...simulador.avaliarSimulador(consolidado, cotacoes, cambio), cambio });
+});
+
+// ---------- Indicadores globais (Banco Mundial, sem chave) ----------
+async function mundoBM() {
+  const cache = cacheGet('mundo-bm', 86_400_000, false); // 24 h: dados anuais
+  if (cache) return cache;
+  const paises = dadosGlobais.PAISES_BM.map((p) => p.id).join(';');
+  const res = await Promise.allSettled(dadosGlobais.INDICADORES_BM.map(async (ind) => {
+    const j = await fetchJson(`https://api.worldbank.org/v2/country/${paises}/indicator/${ind.id}?format=json&mrnev=1&per_page=50`, { timeout: 20_000 });
+    return dadosGlobais.normalizarBancoMundial(ind, j);
+  }));
+  const result = res.filter((r) => r.status === 'fulfilled' && Object.keys(r.value.valores).length).map((r) => r.value);
+  if (!result.length) {
+    const c = _euaCache.get('mundo-bm');
+    if (c) return c.data;
+    throw new Error('nenhum indicador do Banco Mundial disponível');
+  }
+  const data = { paises: dadosGlobais.PAISES_BM, result, fonte: 'Banco Mundial (World Development Indicators)' };
+  cacheSet('mundo-bm', data);
+  return data;
+}
+
+app.get('/api/monitor/mundo', limitarDados, async (_req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.json(await mundoBM());
+  } catch (e) {
+    log('erro', 'monitor/mundo:', e.message);
+    res.status(502).json({ erro: 'Falha ao buscar os indicadores do Banco Mundial.' });
+  }
+});
+
+// ---------- Fincept API (opcional, chave do próprio usuário) ----------
+// Cobra créditos por chamada (350 grátis no cadastro, sem renovação), então tudo tem
+// cache longo, o GARCH só roda por clique e há um teto diário de chamadas.
+const FINCEPT_KEY = (process.env.FINCEPT_API_KEY || '').trim();
+const FINCEPT_CHAMADAS_DIA = Number(process.env.FINCEPT_CHAMADAS_POR_DIA) || 40;
+const _finceptUso = { dia: '', chamadas: 0 };
+async function fincept(caminho, { metodo = 'GET', corpo } = {}) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  if (_finceptUso.dia !== hoje) { _finceptUso.dia = hoje; _finceptUso.chamadas = 0; }
+  if (_finceptUso.chamadas >= FINCEPT_CHAMADAS_DIA) throw Object.assign(new Error('limite diário de chamadas à Fincept atingido'), { limite: true });
+  _finceptUso.chamadas++;
+  const headers = { 'X-API-Key': FINCEPT_KEY };
+  const url = `https://api.fincept.in${caminho}`;
+  return metodo === 'POST' ? postJson(url, corpo, { timeout: 30_000, headers }) : fetchJson(url, { timeout: 20_000, headers });
+}
+function erroFincept(res, rotulo, e, chave) {
+  log('erro', `fincept/${rotulo}:`, e.message);
+  const c = chave && _euaCache.get(chave);
+  if (c) return res.json(c.data);
+  if (e.limite) return res.status(429).json({ erro: 'O teto diário de chamadas à Fincept foi atingido (FINCEPT_CHAMADAS_POR_DIA). Tente amanhã.' });
+  if (/HTTP 40[12]/.test(e.message)) return res.status(502).json({ erro: 'A Fincept recusou a chave ou não há créditos: confira FINCEPT_API_KEY e o saldo em fincept.in.' });
+  res.status(502).json({ erro: 'Falha ao consultar a Fincept API.' });
+}
+
+app.get('/api/fincept/paises', limitarDados, async (_req, res) => {
+  if (faltaChave(FINCEPT_KEY, 'FINCEPT_API_KEY', res)) return;
+  const chave = 'fincept:paises';
+  const cache = cacheGet(chave, 43_200_000, false); // 12 h
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=3600'); return res.json(cache); }
+  try {
+    const result = dadosGlobais.normalizarPaisesFincept(await fincept('/macro/wgb/country-detail'));
+    if (!result.length) throw new Error('resumo por país sem os países esperados');
+    const data = { result, fonte: 'Fincept API (World Government Bonds)' };
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.json(data);
+  } catch (e) { erroFincept(res, 'paises', e, chave); }
+});
+
+app.get('/api/fincept/agenda', limitarDados, async (_req, res) => {
+  if (faltaChave(FINCEPT_KEY, 'FINCEPT_API_KEY', res)) return;
+  const chave = 'fincept:agenda';
+  const cache = cacheGet(chave, 10_800_000, false); // 3 h
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=1800'); return res.json(cache); }
+  const dia = (d) => d.toISOString().slice(0, 10);
+  const de = new Date(), ate = new Date(Date.now() + 7 * 86_400_000);
+  try {
+    const res2 = await Promise.allSettled(['BR', 'US'].map(async (pais) => dadosGlobais.normalizarAgendaFincept(
+      await fincept(`/macro/upcoming-events?country=${pais}&start_date=${dia(de)}&end_date=${dia(ate)}&limit=60`), pais)));
+    const ok = res2.filter((r) => r.status === 'fulfilled');
+    if (!ok.length) throw res2[0].reason;
+    const result = ok.flatMap((r) => r.value).sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+    const data = { result, fonte: 'Fincept API (Trading Economics)', de: dia(de), ate: dia(ate) };
+    cacheSet(chave, data);
+    res.setHeader('Cache-Control', 'public, max-age=1800');
+    res.json(data);
+  } catch (e) { erroFincept(res, 'agenda', e, chave); }
+});
+
+app.post('/api/fincept/garch', limitar, async (req, res) => {
+  if (faltaChave(FINCEPT_KEY, 'FINCEPT_API_KEY', res)) return;
+  const simbolo = String((req.body && req.body.symbol) || '').trim().toUpperCase();
+  if (!SIMBOLO_VALIDO.test(simbolo)) return res.status(400).json({ erro: 'Informe um ticker válido (ex.: PETR4.SA).' });
+  const chave = `fincept:garch:${simbolo}`;
+  const cache = cacheGet(chave, 86_400_000, false); // 24 h: o ajuste usa fechamentos diários
+  if (cache) return res.json({ ...cache, doCache: true });
+  let hist;
+  try { hist = await historicoComCache(simbolo, '1y'); } catch (e) { return res.status(502).json({ erro: 'Falha ao buscar o histórico do ativo.' }); }
+  const retornos = dadosGlobais.retornosPercentuais(hist.pontos);
+  if (retornos.length < 100) return res.status(422).json({ erro: 'Histórico curto demais para ajustar um GARCH (mínimo de 100 pregões).' });
+  try {
+    const previsao = dadosGlobais.normalizarGarchFincept(await fincept('/quantlib/statistics/timeseries/garch/forecast', {
+      metodo: 'POST', corpo: { returns: retornos, p: 1, q: 1, steps: 5 },
+    }));
+    const ultimos = retornos.slice(-20).map((r) => r / 100);
+    const m = ultimos.reduce((a, b) => a + b, 0) / ultimos.length;
+    const realizada20 = Math.sqrt(ultimos.reduce((a, r) => a + (r - m) ** 2, 0) / (ultimos.length - 1)) * Math.sqrt(252);
+    const data = { symbol: simbolo, nome: hist.nome, pregoes: retornos.length, ...previsao, realizada20, fonte: 'Fincept API (GARCH(1,1))', calculado: Date.now() };
+    cacheSet(chave, data);
+    res.json(data);
+  } catch (e) { erroFincept(res, 'garch', e); }
+});
+
 // Notícias de uma empresa dos EUA (Finnhub company-news). Ativos da B3 usam /api/br/noticias.
 async function fetchNoticiasEmpresa(simbolo) {
   const ate = new Date();
@@ -1073,6 +1206,7 @@ app.put('/api/monitor/conta', limitarDados, exigirSenha, (req, res) => {
     alertas: monitor.mesclarAlertas(anterior ? anterior.alertas : [], dados.alertas),
     email: dados.email,
     carteira: dados.carteira !== undefined ? dados.carteira : (anterior && anterior.carteira) || [],
+    ordens: dados.ordens !== undefined ? dados.ordens : (anterior && anterior.ordens) || [],
     criado: anterior ? anterior.criado : Date.now(),
     atualizado: Date.now(),
   };
@@ -1119,6 +1253,7 @@ if (require.main === module) {
     if (!FRED_KEY) console.warn('FRED_API_KEY ausente: /api/eua/indicadores responde 503.');
     if (!BRAPI_KEY) console.warn('BRAPI_API_KEY ausente: /api/br/cotacoes responde 503.');
     if (!EXA_KEY) console.warn('EXA_API_KEY ausente: /api/br/noticias responde 503.');
+    if (!FINCEPT_KEY) console.warn('FINCEPT_API_KEY ausente: /api/fincept/* responde 503 (países, agenda e GARCH ficam fora do monitor).');
     if (!process.env.DADOS_DIR) console.warn(`DADOS_DIR ausente: o monitor grava em ${DADOS_DIR}; no Railway isso se perde a cada deploy (monte um Volume e aponte DADOS_DIR para ele).`);
     if (!emailDisponivel) console.warn('SMTP_HOST/SMTP_FROM ausentes: alertas do monitor não enviam e-mail.');
     monitor.criarRotina({
