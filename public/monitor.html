@@ -1254,7 +1254,7 @@ function desenharFronteira(f){
     const vx = x0 + ((x1 - x0) * k) / 3;
     grade += `<text x="${px(vx)}" y="${H - 12}" fill="#5b6b85" font-size="11" text-anchor="middle" font-family="ui-monospace,monospace">${fmtPct(vx, 0)}</text>`;
   }
-  grade += `<text x="${W - pd}" y="${H - 1}" fill="#5b6b85" font-size="10" text-anchor="end">volatilidade anual →</text><text x="4" y="${pt + 8}" fill="#5b6b85" font-size="10">retorno</text>`;
+  grade += `<text x="${W - pd}" y="${H - 1}" fill="#5b6b85" font-size="10" text-anchor="end">volatilidade anual →</text><text x="${pe + 6}" y="${pt + 10}" fill="#5b6b85" font-size="10">↑ retorno médio anual</text>`;
   const nuvem = f.pontos.map((p) => `<circle cx="${px(p[0]).toFixed(1)}" cy="${py(p[1]).toFixed(1)}" r="2" fill="#2f7bff" fill-opacity=".35"/>`).join('');
   const marca = (c, cor, rotulo) => c ? `<circle cx="${px(c.vol)}" cy="${py(c.ret)}" r="6" fill="${cor}" stroke="#0b1220" stroke-width="2"><title>${rotulo}: retorno ${fmtVar(c.ret * 100)}, volatilidade ${fmtPct(c.vol, 1)}</title></circle>` : '';
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grade}${nuvem}
