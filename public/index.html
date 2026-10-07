@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Agente Trader — análise de trade educacional com IA</title>
 <meta name="description" content="Agente Trader: organiza cenários, risco, setups, simulações e revisões com os 100 códigos de análise de trade. Educacional, não é recomendação de investimento.">
 <style>
@@ -151,12 +151,29 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
 .guia .painelfinal .linha{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dashed var(--borda);font-size:.9rem}
 .guia .painelfinal .linha span:last-child{font-family:ui-monospace,monospace;color:var(--texto)}
 .guia .carregando{color:var(--texto2);font-size:.88rem;padding:8px 0}
+#entrada .linha button{flex:none}
 @media (max-width:900px){
   main{grid-template-columns:1fr}
   #lateral{position:fixed;top:0;right:0;bottom:0;width:min(92vw,360px);z-index:40;transform:translateX(100%);transition:transform .2s;box-shadow:-10px 0 30px rgba(0,0,0,.5)}
   #lateral.aberto{transform:none}
   #abrirLateral{display:inline-block}
   header .sub{display:none}
+}
+/* Celular: a mesma página, com a barra de botões rolando de lado e o teclado sem zoom. */
+@media (max-width:720px){
+  header{flex-wrap:wrap;align-items:flex-start;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px}
+  header .acoes{width:100%;margin-left:0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;padding-bottom:2px}
+  header .acoes button{flex:none;white-space:nowrap}
+  #estado{display:none}
+  #cotacoes-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  #cotacoes-bar .cot-fonte{margin-left:8px}
+  #conversa{padding:12px}
+  #entrada{padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
+  textarea,input,select{font-size:16px}
+  .modal{padding:8px;align-items:flex-end}
+  .modal .caixa,#modalEUA .caixa,#modalBR .caixa{width:100%;max-height:92vh}
+  .eua-sec .eua-cab{flex-wrap:wrap}
+  .eua-grid{grid-template-columns:1fr 1fr}
 }
 </style>
 </head>
