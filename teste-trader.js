@@ -274,19 +274,26 @@ console.log('6. busca na web e erros OK');
   const br = Object.fromEntries(paises[0].campos.map((c) => [c.rotulo, c.valor]));
   assert.strictEqual(br['Juro 10 anos'], 13.9);
   assert.strictEqual(br['Juro do banco central'], 15, 'número em texto vira número');
-  assert.strictEqual(br['Rating S&P'], 'BB');
-  assert.strictEqual(br['CDS 5 anos (pb)'], 160.2);
-  assert.strictEqual(br['Prob. de default'], 2.7);
+  assert.strictEqual(br['Nota S&P'], 'BB');
+  assert.strictEqual(br['CDS de 5 anos (pontos)'], 160.2);
+  assert.strictEqual(br['Probabilidade de calote'], 2.7);
   assert.throws(() => dg.normalizarPaisesFincept({ success: false, message: { error: 'unauthenticated', message: 'API key required' } }), /API key required/);
   const agenda = dg.normalizarAgendaFincept({ success: true, data: { events: [
     { date: '2026-10-08T12:30:00', country: 'United States', event: 'CPI YoY', actual: null, forecast: '2.9%', previous: '3.0%', importance: 3 },
     { date: '2026-10-07T09:00:00', event: 'IPCA', te_forecast: '0.4%' },
     { country: 'BR' },
   ] } }, 'BR');
-  assert.deepStrictEqual(agenda.map((e) => e.evento), ['IPCA', 'CPI YoY'], 'agenda ordenada por data, sem evento incompleto');
-  assert.strictEqual(agenda[0].pais, 'BR', 'país da consulta quando a fonte não informa');
+  assert.deepStrictEqual(agenda.map((e) => e.evento), ['IPCA', 'Inflação (CPI) em 12 meses'], 'agenda em português, ordenada por data');
+  assert.strictEqual(agenda[0].pais, 'Brasil', 'país da consulta traduzido quando a fonte não informa');
   assert.strictEqual(agenda[0].previsao, '0.4%');
-  assert.strictEqual(agenda[1].importancia, '3');
+  assert.strictEqual(agenda[1].importancia, 'alta', 'importância numérica vira texto');
+  assert.strictEqual(agenda[1].pais, 'EUA');
+  assert.strictEqual(dg.traduzirEconomico('Building Permits MoM Final'), 'Licenças de construção no mês (final)');
+  assert.strictEqual(dg.traduzirEconomico('30-Year Bond Auction'), 'Leilão de títulos de 30 anos');
+  assert.strictEqual(dg.traduzirEconomico('RBI Interest Rate Decision'), 'RBI decisão de juros');
+  assert.strictEqual(dg.traduzirEconomico('Core CPI YoY'), 'Núcleo da inflação (CPI) em 12 meses');
+  assert.strictEqual(dg.traduzirPais('united states'), 'EUA');
+  assert.strictEqual(dg.traduzirImportancia('Low'), 'baixa');
   const rp = dg.retornosPercentuais([[1, 100], [2, 110], [3, 0], [4, 99]]);
   assert.ok(rp.length === 1 && Math.abs(rp[0] - 100 * Math.log(1.1)) < 1e-12, 'retornos em % ignoram preço zerado');
   const g1 = dg.normalizarGarchFincept({ success: true, data: { forecast_volatility: [2, 2.1], params: { omega: 0.1, alpha: 0.08, beta: 0.9 } } });

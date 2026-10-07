@@ -174,6 +174,37 @@ app.get('/api/codigos', (_req, res) => res.json({
 
 app.post('/api/acesso', limitar, exigirSenha, (_req, res) => res.json({ ok: true }));
 
+// Traduz títulos e resumos de notícia sob demanda. O calendário e os indicadores
+// já saem em português em dados-globais.js; aqui só entra texto livre, e só quando
+// a pessoa pede, para não gastar a chave da IA a cada atualização.
+app.post('/api/traduzir', limitar, exigirSenha, async (req, res) => {
+  if (!client) return res.status(503).json({ erro: 'Tradução indisponível: ANTHROPIC_API_KEY não configurada no servidor.' });
+  const lista = Array.isArray(req.body && req.body.textos) ? req.body.textos : null;
+  if (!lista || !lista.length) return res.status(400).json({ erro: 'Envie os textos para traduzir.' });
+  if (lista.length > 40) return res.status(400).json({ erro: 'No máximo 40 textos por vez.' });
+  const textos = lista.map((t) => String(t || '').slice(0, 700));
+  const chave = 'trad:' + crypto.createHash('sha256').update(textos.join('\n---\n')).digest('hex');
+  const cache = cacheGet(chave, 21_600_000, false); // 6 h: a mesma lista não paga de novo
+  if (cache) return res.json(cache);
+  try {
+    const resp = await client.messages.create({
+      model: MODEL,
+      max_tokens: 4000,
+      system: 'Traduza cada item para português do Brasil. Mantenha números, siglas, tickers e nomes próprios. Não comente, não explique e não dê recomendação de investimento. Responda somente um JSON array de strings, na mesma quantidade e na mesma ordem.',
+      messages: [{ role: 'user', content: JSON.stringify(textos) }],
+    });
+    const bruto = ((resp && resp.content) || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    const traduzidos = JSON.parse(bruto.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim());
+    if (!Array.isArray(traduzidos) || traduzidos.length !== textos.length) throw new Error('resposta fora do formato');
+    const data = { textos: traduzidos.map((t) => String(t).slice(0, 900)) };
+    cacheSet(chave, data);
+    res.json(data);
+  } catch (e) {
+    log('erro', 'traduzir:', e.message);
+    res.status(502).json({ erro: 'Não consegui traduzir agora. Tente de novo em instantes.' });
+  }
+});
+
 app.post('/api/chat', limitar, exigirSenha, async (req, res) => {
   if (!client) return res.status(503).json({ erro: 'ANTHROPIC_API_KEY não configurada no servidor.' });
   const brutos = Array.isArray(req.body && req.body.messages) ? req.body.messages : [];
@@ -573,8 +604,8 @@ app.get('/api/eua/noticias', limitarDados, async (req, res) => {
 const FRED_SERIES = [
   { id: 'FEDFUNDS', nome: 'Juros do Fed (Fed Funds)', sufixo: '%' },
   { id: 'UNRATE',   nome: 'Desemprego (EUA)',          sufixo: '%' },
-  { id: 'CPIAUCSL', nome: 'CPI (índice de preços)',    sufixo: '' },
-  { id: 'DGS10',    nome: 'Treasury 10 anos',          sufixo: '%' },
+  { id: 'CPIAUCSL', nome: 'Inflação ao consumidor (CPI)', sufixo: '' },
+  { id: 'DGS10',    nome: 'Juro do Tesouro dos EUA, 10 anos', sufixo: '%' },
   { id: 'GDP',      nome: 'PIB (US$ bi)',              sufixo: '' },
 ];
 async function fetchIndicadorFred(s) {
