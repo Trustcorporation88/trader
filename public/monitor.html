@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Monitor — Agente Trader</title>
 <meta name="description" content="Monitor do Agente Trader: busca de ativos, watchlist, gráficos, notícias e alertas de preço. Educacional, não é recomendação de investimento.">
 <style>
@@ -30,10 +30,10 @@ header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px
 .marca{display:flex;align-items:center;gap:9px;font-weight:700;font-size:1.05rem;white-space:nowrap}
 .marca .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--laranja),#ffb04a);display:grid;place-items:center;color:#111;font-size:.9rem}
 .marca span{color:var(--laranja)}
-nav{display:flex;gap:4px}
+nav{display:flex;gap:4px;flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none}
 nav a{color:var(--texto2);text-decoration:none;padding:6px 10px;border-radius:8px;font-size:.88rem}
 nav a:hover,nav a.ativo{color:var(--texto);background:var(--painel2)}
-.busca{position:relative;flex:1;max-width:420px;margin-left:auto}
+.busca{position:relative;flex:0 1 360px;min-width:min(100%,160px);max-width:420px;margin-left:auto}
 .busca input{width:100%;padding-left:34px}
 .busca .lupa{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--apagado);pointer-events:none}
 .resultados{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--painel);border:1px solid var(--borda);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.45);max-height:360px;overflow:auto;display:none;z-index:30}
@@ -83,7 +83,7 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
 
 /* --- Watchlist e alertas --- */
 .lista{display:flex;flex-direction:column;gap:6px}
-.linha{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;background:#0d1626;border:1px solid var(--borda);border-radius:10px;padding:8px 10px;cursor:pointer}
+.linha{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;background:#0d1626;border:1px solid var(--borda);border-radius:10px;padding:8px 10px;cursor:pointer}
 .linha:hover{border-color:var(--acento)}
 .linha.foco{border-color:var(--laranja)}
 .linha .s{font:600 .88rem ui-monospace,monospace}
@@ -120,7 +120,8 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 40px;display:flex;flex-dir
 .sync-linha{display:flex;gap:6px}
 .sync-linha input{flex:1;min-width:0}
 .sync-linha button{white-space:nowrap}
-nav{overflow-x:auto;scrollbar-width:none;min-width:0}
+.form-carteira > *, .form-sim > *, .form-alerta > *, .tabela-wrap{min-width:0}
+input,select{max-width:100%}
 .analisar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--borda)}
 .analisar label{font-size:.8rem;color:var(--texto2)}
 .analisar select{flex:1;min-width:200px}
@@ -211,12 +212,30 @@ button.card-mercado:hover{border-color:var(--laranja)}
   .grade-principal,.grade-mercado{grid-template-columns:1fr}
 }
 @media (max-width:720px){
-  header{flex-wrap:wrap;gap:10px;padding:10px 14px}
-  nav{order:3;width:100%;overflow-x:auto}
-  .busca{order:2;max-width:none;flex-basis:100%}
-  main{padding:14px}
+  body{overflow-x:clip}
+  header,#faixa,main{width:100%;max-width:100%;min-width:0}
+  header{flex-wrap:wrap;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 8px}
+  .marca{flex:1}
+  .voltar{margin-left:auto}
+  nav{order:3;width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  nav a{flex:none;white-space:nowrap;padding:8px 12px}
+  .busca{order:2;max-width:none;flex:1 1 100%;margin-left:0}
+  main{padding:12px 12px calc(28px + env(safe-area-inset-bottom))}
+  #faixa{padding:7px 12px}
   #grafico{height:240px}
-  .tv{height:380px}
+  .tv,.tv-ativo{height:320px}
+  .card-mercado .preco{font-size:1.05rem}
+  .ativo-cab .acoes,.modo-grafico,.analisar button{margin-left:0}
+  .cartao>h2{flex-wrap:wrap}
+  .abas{flex-wrap:wrap}
+  .abas button.acao{margin-left:0}
+  .form-alerta{grid-template-columns:1fr}
+  .agenda > div{grid-template-columns:1fr;gap:2px}
+  .alerta-linha{flex-wrap:wrap}
+  input,select,textarea{font-size:16px}
+  .toast{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom))}
+  .toast div{max-width:none}
+  .aviso-cvm{padding:0 12px 20px}
 }
 </style>
 </head>
