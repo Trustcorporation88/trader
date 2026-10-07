@@ -179,6 +179,7 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
 /* --- Notícias --- */
 .abas{display:flex;gap:4px;margin-bottom:12px}
 .abas button{background:transparent;font-size:.82rem}
+.abas button.acao{margin-left:auto;background:var(--painel2)}
 .abas button.ativo{background:var(--painel2);border-color:var(--laranja);color:var(--laranja)}
 .noticias{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
 .noticias a{display:flex;flex-direction:column;gap:6px;background:#0d1626;border:1px solid var(--borda);border-radius:11px;padding:11px 13px;text-decoration:none;color:var(--texto)}
@@ -354,8 +355,8 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
     <h3 style="font-size:.85rem;margin:18px 0 8px;color:var(--texto2)">Mundo <span class="extra" style="font-weight:400;font-size:.72rem;color:var(--apagado)">Banco Mundial · último ano disponível por país</span></h3>
     <div id="macroMundo"><span class="carregando">Carregando…</span></div>
     <div class="grade-macro" style="margin-top:18px">
-      <div><h3>Juros, CDS e rating por país <span class="extra">Fincept API</span></h3><div id="finceptPaises"><span class="carregando">Carregando…</span></div></div>
-      <div><h3>Agenda econômica · 7 dias <span class="extra">Fincept API (Trading Economics)</span></h3><div id="finceptAgenda"><span class="carregando">Carregando…</span></div></div>
+      <div><h3>Juros, CDS e classificação de risco <span class="extra">Fincept</span></h3><div id="finceptPaises"><span class="carregando">Carregando…</span></div></div>
+      <div><h3>Agenda econômica · 7 dias <span class="extra">Fincept · nomes em português</span></h3><div id="finceptAgenda"><span class="carregando">Carregando…</span></div></div>
     </div>
     <div class="analisar">
       <span class="nota" style="margin:0">Levar estes números para o chat, junto com o ativo em foco:</span>
@@ -379,6 +380,7 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
     <div class="abas" id="abasNoticias">
       <button data-aba="mercado" class="ativo">Mercado (EUA)</button>
       <button data-aba="ativo" id="abaAtivo">Do ativo</button>
+      <button type="button" class="acao" id="btTraduzirNoticias">Traduzir para português</button>
     </div>
     <div class="noticias" id="listaNoticias"><span class="carregando">Carregando notícias…</span></div>
   </section>
@@ -751,8 +753,18 @@ $('abasNoticias').addEventListener('click', (ev) => {
   $('abasNoticias').querySelectorAll('button').forEach((x) => x.classList.toggle('ativo', x === b));
   carregarNoticias();
 });
+let noticiasItens = [];
+function renderNoticias(itens){
+  const el = $('listaNoticias');
+  el.innerHTML = itens.length ? itens.map((n) => `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">
+      <span class="t">${esc(n.titulo)}</span>${n.resumo ? `<span class="r">${esc(n.resumo)}</span>` : ''}
+      <span class="m">${esc(n.fonte || '')}${n.data ? ' · ' + fmtData(n.data) : ''}</span></a>`).join('')
+    : '<div class="vazio">Nenhuma notícia recente encontrada.</div>';
+}
 async function carregarNoticias(){
   const seq = ++noticiasSeq, el = $('listaNoticias');
+  $('btTraduzirNoticias').disabled = false;
+  $('btTraduzirNoticias').textContent = 'Traduzir para português';
   el.innerHTML = '<span class="carregando">Carregando notícias…</span>';
   let url;
   if (abaNoticias === 'mercado') url = '/api/eua/noticias';
@@ -762,13 +774,35 @@ async function carregarNoticias(){
   try {
     const d = await getJson(url);
     if (seq !== noticiasSeq) return;
-    const itens = d.result || [];
-    el.innerHTML = itens.length ? itens.map((n) => `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">
-      <span class="t">${esc(n.titulo)}</span>${n.resumo ? `<span class="r">${esc(n.resumo)}</span>` : ''}
-      <span class="m">${esc(n.fonte || '')}${n.data ? ' · ' + fmtData(n.data) : ''}</span></a>`).join('')
-      : '<div class="vazio">Nenhuma notícia recente encontrada.</div>';
-  } catch (e) { if (seq === noticiasSeq) el.innerHTML = `<div class="vazio">Notícias indisponíveis: ${esc(e.message)}</div>`; }
+    noticiasItens = d.result || [];
+    renderNoticias(noticiasItens);
+  } catch (e) { if (seq === noticiasSeq) { noticiasItens = []; el.innerHTML = `<div class="vazio">Notícias indisponíveis: ${esc(e.message)}</div>`; } }
 }
+$('btTraduzirNoticias').onclick = async () => {
+  const mapa = [];
+  const textos = [];
+  noticiasItens.forEach((n, i) => {
+    if (n.titulo) { mapa.push([i, 'titulo']); textos.push(String(n.titulo).slice(0, 700)); }
+    if (n.resumo) { mapa.push([i, 'resumo']); textos.push(String(n.resumo).slice(0, 700)); }
+  });
+  if (!textos.length) { toast('Não há notícias nesta aba para traduzir.'); return; }
+  const bt = $('btTraduzirNoticias');
+  bt.disabled = true; bt.textContent = 'Traduzindo…';
+  try {
+    const r = await fetch('/api/traduzir', { method: 'POST', headers: cabecalhos(), body: JSON.stringify({ textos }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || ('HTTP ' + r.status));
+    if (!Array.isArray(j.textos) || j.textos.length !== textos.length) throw new Error('A tradução voltou incompleta.');
+    const copia = noticiasItens.map((n) => ({ ...n }));
+    j.textos.forEach((t, k) => { copia[mapa[k][0]][mapa[k][1]] = t; });
+    noticiasItens = copia;
+    renderNoticias(copia);
+    bt.textContent = 'Traduzido';
+  } catch (e) {
+    toast(e.message);
+    bt.textContent = 'Traduzir para português';
+  } finally { bt.disabled = false; }
+};
 
 // ---------- Widgets TradingView ----------
 function widgetTV(alvo, script, config){
@@ -1514,15 +1548,15 @@ async function carregarFincept(){
     const rotulos = [...new Set(d.result.flatMap((p) => p.campos.map((c) => c.rotulo)))];
     $('finceptPaises').innerHTML = `<div class="tabela-wrap"><table class="tabela"><thead><tr><th></th>${d.result.map((p) => `<th>${esc(p.pais)}</th>`).join('')}</tr></thead>
       <tbody>${rotulos.map((r) => `<tr><td>${esc(r)}</td>${d.result.map((p) => { const c = p.campos.find((x) => x.rotulo === r); return `<td>${c ? fmtFincept(c) : '—'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
-      <p class="nota">CDS e juro longo medem quanto o mercado cobra pelo risco de cada país. Unidades como vieram da fonte.</p>`;
+      <p class="nota">CDS e juro longo medem quanto o mercado cobra pelo risco de cada país. Números como vieram da fonte; textos, em português.</p>`;
   }).catch((e) => { $('finceptPaises').innerHTML = `<div class="vazio">Indisponível: ${esc(e.message)}</div>`; });
   getJson('/api/fincept/agenda').then((d) => {
     const q = (rot, v) => (v == null || v === '' ? '' : `${rot} ${esc(v)}`);
     $('finceptAgenda').innerHTML = d.result.length ? `<div class="agenda">${d.result.slice(0, 60).map((e) => `<div>
         <span class="mono">${fmtDataEvento(e.data)}</span><b class="mono">${esc(e.pais)}</b>
-        <span>${esc(e.evento)}${e.importancia ? ` <span class="nota" style="margin:0">· imp. ${esc(e.importancia)}</span>` : ''}</span>
-        <span class="q">${[q('atual', e.atual), q('prev.', e.previsao), q('ant.', e.anterior)].filter(Boolean).join(' · ')}</span>
-      </div>`).join('')}</div><p class="nota">Divulgações costumam aumentar a volatilidade em volta do horário. Horários como vieram da fonte.</p>`
+        <span>${esc(e.evento)}${e.importancia ? ` <span class="nota" style="margin:0">· relevância ${esc(e.importancia)}</span>` : ''}</span>
+        <span class="q">${[q('atual', e.atual), q('previsão', e.previsao), q('anterior', e.anterior)].filter(Boolean).join(' · ')}</span>
+      </div>`).join('')}</div><p class="nota">Nomes em português; a sigla internacional fica entre parênteses quando o mercado a usa (CPI, PMI). O horário vem como a fonte publicou. Divulgação costuma aumentar a volatilidade em volta desse horário.</p>`
       : '<div class="vazio">Nenhum evento de Brasil ou EUA nos próximos 7 dias.</div>';
   }).catch((e) => { $('finceptAgenda').innerHTML = `<div class="vazio">Indisponível: ${esc(e.message)}</div>`; });
 }
