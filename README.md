@@ -93,7 +93,7 @@ Sem código, o agente identifica qual dos 100 se aplica, diz qual está usando e
 
 ## Monitor (`/monitor`)
 
-Painel de acompanhamento: busca por nome ou ticker, gráfico do ativo (linha simples com dados do Yahoo ou gráfico completo do TradingView), watchlist, alertas de preço-alvo, visão de mercado, heatmap e notícias. O botão 📈 Monitor no topo do chat leva até ele.
+Painel de acompanhamento: no topo, Ibovespa, Real/Dólar, S&P 500 e Dow Jones (variação do dia e desenho de 6 meses); busca por nome ou ticker, gráfico do ativo (linha simples com dados do Yahoo ou gráfico completo do TradingView), watchlist, alertas de preço-alvo, visão de mercado, heatmap e notícias. O botão 📈 Monitor no topo do chat leva até ele.
 
 - **Sincronização sem login:** cada navegador gera um código do monitor. Colando esse código em "Usar o código de outro aparelho", o outro navegador passa a ver e editar a mesma watchlist e os mesmos alertas. No servidor fica só o hash do código. Se `SENHA_ACESSO` estiver definida, salvar no servidor também exige a senha.
 - **Alertas com a página fechada:** o servidor confere os alertas ativos a cada 5 minutos (`MONITOR_INTERVALO_MS`) com preços do Yahoo e, se houver e-mail cadastrado e SMTP configurado, manda um e-mail por disparo.
