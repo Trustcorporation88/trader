@@ -94,6 +94,10 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
 .eua-sec .eua-cab{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .eua-sec .eua-cab h3{margin:0;font-size:1rem;color:var(--acento2)}
 .eua-sec .eua-cab .eua-ts{font-size:.72rem;color:#3a4a60;margin-left:6px}
+.eua-traduzir{margin-left:auto;background:transparent;border:1px solid var(--borda);color:var(--texto);border-radius:6px;cursor:pointer;font:inherit;font-size:.75rem;padding:4px 10px}
+.eua-traduzir:hover{border-color:var(--acento);color:var(--acento2)}
+.eua-traduzir:disabled{opacity:.55;cursor:default}
+.eua-cab .eua-traduzir + .eua-refresh{margin-left:0}
 .eua-refresh{margin-left:auto;background:transparent;border:1px solid var(--borda);color:var(--texto2);border-radius:6px;cursor:pointer;font-size:.85rem;line-height:1;padding:4px 8px;transition:transform .2s,color .15s}
 .eua-refresh:hover{color:var(--texto)}
 .eua-refresh:disabled{opacity:.5;cursor:default}
@@ -228,6 +232,7 @@ textarea:focus{outline:2px solid var(--acento);outline-offset:1px}
     </div>
     <div class="eua-sec">
       <div class="eua-cab"><h3>📰 Notícias dos EUA</h3><span class="eua-ts" id="eua-news-ts"></span>
+        <button type="button" class="eua-traduzir" id="eua-traduzir-btn" onclick="traduzirNoticiasEUA()">Traduzir para português</button>
         <button class="eua-refresh" id="eua-news-btn" title="Atualizar agora" onclick="carregarNoticiasEUA(true)">🔄</button></div>
       <div class="eua-news" id="eua-news"><span class="eua-vazio">carregando…</span></div>
     </div>
@@ -583,25 +588,62 @@ async function carregarIndicadoresEUA(forcar){
   finally { _spin('eua-ind-btn', false); }
 }
 
+let noticiasEUA = [];
+function renderNoticiasEUA(itens){
+  const alvo = document.getElementById('eua-news');
+  if(!itens.length){ alvo.innerHTML = '<span class="eua-vazio">Sem notícias no momento.</span>'; return; }
+  alvo.innerHTML = itens.map(n => {
+    const href = hrefSeguro(n.url);
+    if(!href) return '';
+    const quando = n.data ? new Date(n.data).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener">'
+      + '<div class="tit">' + esc(n.titulo) + '</div>'
+      + '<div class="meta">' + esc(n.fonte || '') + (quando ? ' · ' + quando : '') + '</div></a>';
+  }).join('');
+}
+function resetBotaoTraduzirEUA(){
+  const bt = document.getElementById('eua-traduzir-btn');
+  bt.disabled = false;
+  bt.textContent = 'Traduzir para português';
+}
 async function carregarNoticiasEUA(forcar){
   _spin('eua-news-btn', true);
+  resetBotaoTraduzirEUA();
   const alvo = document.getElementById('eua-news');
   try {
     const r = await fetch('/api/eua/noticias' + (forcar ? '?force=1' : ''));
     const d = await r.json();
-    const itens = (d && d.result) || [];
-    if(!itens.length){ alvo.innerHTML = '<span class="eua-vazio">Sem notícias no momento.</span>'; return; }
-    alvo.innerHTML = itens.map(n => {
-      const href = hrefSeguro(n.url);
-      if(!href) return '';
-      const quando = n.data ? new Date(n.data).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
-      return '<a href="' + esc(href) + '" target="_blank" rel="noopener">'
-        + '<div class="tit">' + esc(n.titulo) + '</div>'
-        + '<div class="meta">' + esc(n.fonte || '') + (quando ? ' · ' + quando : '') + '</div></a>';
-    }).join('');
-    document.getElementById('eua-news-ts').textContent = 'atualizado ' + horaAgora();
-  } catch(_){ alvo.innerHTML = '<span class="eua-vazio">Falha ao carregar notícias.</span>'; }
+    noticiasEUA = (d && d.result) || [];
+    renderNoticiasEUA(noticiasEUA);
+    if(noticiasEUA.length) document.getElementById('eua-news-ts').textContent = 'atualizado ' + horaAgora();
+  } catch(_){ noticiasEUA = []; alvo.innerHTML = '<span class="eua-vazio">Falha ao carregar notícias.</span>'; }
   finally { _spin('eua-news-btn', false); }
+}
+async function traduzirNoticiasEUA(){
+  const bt = document.getElementById('eua-traduzir-btn');
+  const textos = noticiasEUA.map(n => String(n.titulo || '').slice(0, 700));
+  if(!textos.length){ document.getElementById('eua-news-ts').textContent = 'Sem notícias para traduzir.'; return; }
+  bt.disabled = true;
+  bt.textContent = 'Traduzindo…';
+  try {
+    const r = await fetch('/api/traduzir', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, senha ? { 'X-Senha-Acesso': senha } : {}),
+      body: JSON.stringify({ textos }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if(r.status === 401){ pedirSenha(); throw new Error('Informe a senha de acesso para traduzir.'); }
+    if(!r.ok) throw new Error(j.erro || ('HTTP ' + r.status));
+    if(!Array.isArray(j.textos) || j.textos.length !== textos.length) throw new Error('A tradução voltou incompleta.');
+    noticiasEUA = noticiasEUA.map((n, i) => ({ ...n, titulo: j.textos[i] }));
+    renderNoticiasEUA(noticiasEUA);
+    bt.textContent = 'Traduzido';
+    document.getElementById('eua-news-ts').textContent = 'em português · ' + horaAgora();
+  } catch(e) {
+    bt.disabled = false;
+    bt.textContent = 'Traduzir para português';
+    document.getElementById('eua-news-ts').textContent = e.message;
+  }
 }
 
 // ================= Painel Brasil (B3 via brapi, notícias do ativo via Exa) =================
