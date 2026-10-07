@@ -305,7 +305,7 @@ console.log('6. busca na web e erros OK');
   console.log('9. fronteira, simulador de ordens e dados globais OK');
 
   // 10. Cards do painel de mercados
-  const { montarCardMercado, cotacaoParaCard } = require('./server');
+  const { montarCardMercado, cotacaoParaCard, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
   const card = montarCardMercado({ symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' }, {
     preco: 178000, anterior: 100000, moeda: 'BRL',
     pontos: [...Array.from({ length: 98 }, (_, i) => [i, 100 + i]), [98, 177000], [99, 178000]],
@@ -331,6 +331,17 @@ console.log('6. busca na web e erros OK');
   assert.strictEqual(fx.variacaoPontos, 0);
   assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: null }), null);
   assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: 10, regularMarketChangePercent: -100 }).variacaoPontos, null);
+  const fixos = ['^BVSP', 'USDBRL=X'];
+  const cheio = proximoLoteAoVivo(fixos, [...fixos, 'PETR4.SA', 'VALE3.SA'], 0, 10);
+  assert.deepStrictEqual(cheio.lote, ['^BVSP', 'USDBRL=X', 'PETR4.SA', 'VALE3.SA']);
+  assert.strictEqual(cheio.cursor, 0, 'cabe tudo num lote, sem revezamento');
+  const a = proximoLoteAoVivo(fixos, [...fixos, 'A', 'B', 'C', 'D'], 0, 4);
+  assert.deepStrictEqual(a.lote, ['^BVSP', 'USDBRL=X', 'A', 'B'], 'os fixos não saem da fila');
+  const b = proximoLoteAoVivo(fixos, [...fixos, 'A', 'B', 'C', 'D'], a.cursor, 4);
+  assert.deepStrictEqual(b.lote, ['^BVSP', 'USDBRL=X', 'C', 'D']);
+  assert.strictEqual(b.cursor, 0);
+  assert.deepStrictEqual(filtrarSimbolosAoVivo('petr4.sa, PETR4.SA, ruim!, AAPL, ^BVSP', 3), ['PETR4.SA', 'AAPL', '^BVSP']);
+  assert.deepStrictEqual(filtrarSimbolosAoVivo('AAPL,VALE3.SA', 1), ['AAPL']);
   console.log('10. painel de mercados OK');
 
   console.log('\nteste-trader: todos os cenários passaram.');

@@ -198,7 +198,7 @@ button.card-mercado:hover{border-color:var(--laranja)}
 .card-mercado .preco{font:600 1.45rem/1.2 ui-monospace,monospace;margin-top:4px}
 .card-mercado .delta{font:.82rem ui-monospace,monospace;margin-top:2px}
 .card-mercado svg{width:100%;height:64px;display:block;margin-top:6px}
-#painelHora.ao-vivo::before{content:'';display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:#19c8a5;vertical-align:1px;box-shadow:0 0 0 0 rgba(25,200,165,.55);animation:pulso-ao-vivo 1.6s ease-out infinite}
+.extra.ao-vivo::before{content:'';display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:#19c8a5;vertical-align:1px;box-shadow:0 0 0 0 rgba(25,200,165,.55);animation:pulso-ao-vivo 1.6s ease-out infinite}
 @keyframes pulso-ao-vivo{70%{box-shadow:0 0 0 6px rgba(25,200,165,0)}100%{box-shadow:0 0 0 0 rgba(25,200,165,0)}}
 @media (max-width:900px){ .painel{grid-template-columns:1fr 1fr} }
 
@@ -249,7 +249,7 @@ button.card-mercado:hover{border-color:var(--laranja)}
   <section class="cartao" id="painel">
     <h2><span class="etiqueta">Mercados</span> Ibovespa, câmbio e Nova York <span class="extra" id="painelHora"></span></h2>
     <div class="painel" id="painelCards"><span class="carregando">Carregando índices…</span></div>
-    <p class="nota">Preço ao vivo a cada segundo enquanto esta página está aberta (Yahoo Finance; a bolsa pode publicar com atraso e isto não gasta crédito). O desenho é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais. Não é recomendação de compra ou venda.</p>
+    <p class="nota">Preço ao vivo a cada segundo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto (Yahoo Finance; a bolsa pode publicar com atraso e isto não gasta crédito). O desenho é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais. Não é recomendação de compra ou venda.</p>
   </section>
 
   <div class="grade-principal">
@@ -465,13 +465,34 @@ let abaNoticias = 'mercado';
 const cotacoes = {}; // symbol -> { preco, variacao, moeda, nome, ts }
 
 // ---------- Faixa de cotações (reaproveita /api/cotacoes) ----------
+const FAIXA_SIMBOLOS = ['^BVSP', 'USDBRL=X', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
+function htmlFaixa(q){
+  const preco = q.preco != null ? q.preco : q.regularMarketPrice;
+  const variacao = q.variacao != null ? q.variacao : q.regularMarketChangePercent;
+  const nome = q.nome || q.shortName || q.symbol;
+  return `<span class="it" data-s="${esc(q.symbol)}"><span class="n">${esc(nome)}</span><b>${fmtPreco(preco)}</b><span class="${classeVar(variacao)}">${fmtVar(variacao)}</span></span>`;
+}
+function renderFaixa(itens){
+  const box = $('faixa');
+  const nos = [...box.querySelectorAll('.it')];
+  const iguais = itens.length > 0 && nos.length === itens.length && nos.every((n, i) => n.dataset.s === itens[i].symbol);
+  if (!iguais) {
+    box.innerHTML = itens.map(htmlFaixa).join('') || '<span class="carregando">Sem cotações agora.</span>';
+    return;
+  }
+  itens.forEach((q, i) => {
+    const preco = q.preco != null ? q.preco : q.regularMarketPrice;
+    const variacao = q.variacao != null ? q.variacao : q.regularMarketChangePercent;
+    nos[i].querySelector('b').textContent = fmtPreco(preco);
+    const span = nos[i].querySelector('b').nextElementSibling;
+    span.className = classeVar(variacao);
+    span.textContent = fmtVar(variacao);
+  });
+}
 async function carregarFaixa(){
   try {
     const d = await getJson('/api/cotacoes');
-    const itens = (d.quoteResponse && d.quoteResponse.result) || [];
-    $('faixa').innerHTML = itens.map((q) =>
-      `<span class="it"><span class="n">${esc(q.shortName || q.symbol)}</span><b>${fmtPreco(q.regularMarketPrice)}</b><span class="${classeVar(q.regularMarketChangePercent)}">${fmtVar(q.regularMarketChangePercent)}</span></span>`
-    ).join('') || '<span class="carregando">Sem cotações agora.</span>';
+    renderFaixa((d.quoteResponse && d.quoteResponse.result) || []);
   } catch (_) { $('faixa').innerHTML = '<span class="carregando">Cotações indisponíveis no momento.</span>'; }
 }
 
@@ -561,10 +582,13 @@ async function carregarPainel(){
 async function atualizarPainelAgora(){
   if (document.hidden) return;
   try {
-    const vivo = (await getJson('/api/monitor/painel/agora')).itens || [];
-    if (!vivo.length) return;
-    painelAoVivo = vivo;
-    renderPainel(painelBase.length ? mesclarPainel(painelBase, vivo) : vivo, true);
+    const data = await getJson('/api/monitor/painel/agora?symbols=' + encodeURIComponent(simbolosAoVivo().join(',')));
+    const vivo = data.itens || [];
+    if (vivo.length) {
+      painelAoVivo = vivo;
+      renderPainel(painelBase.length ? mesclarPainel(painelBase, vivo) : vivo, true);
+    }
+    aplicarCotacoesAoVivo(data.cotacoes || []);
   } catch (_) { /* mantém o último preço na tela */ }
 }
 $('painelCards').addEventListener('click', (ev) => {
@@ -672,8 +696,8 @@ function renderCabecalho(d){
   const rotulo = { '1d': 'no dia', '5d': 'em 5 dias', '1mo': 'em 1 mês', '6mo': 'em 6 meses', '1y': 'em 1 ano', '5y': 'em 5 anos' }[periodo];
   $('ativoCab').innerHTML = `
     <div><div class="nome">${esc(d.nome)}</div><div class="sub mono">${esc(d.symbol)} · ${esc(d.bolsa || '')} · ${esc(d.moeda || '')}</div></div>
-    <div><div class="preco">${fmtPreco(d.preco, d.moeda)}</div></div>
-    <div class="var ${classeVar(varPeriodo)}">${fmtVar(varPeriodo)} <span class="sub">${rotulo}</span></div>
+    <div><div class="preco" id="ativoPreco">${fmtPreco(d.preco, d.moeda)}</div></div>
+    <div class="var ${classeVar(varPeriodo)}" id="ativoVar">${fmtVar(varPeriodo)} <span class="sub">${rotulo}</span></div>
     <div class="acoes">
       <button type="button" id="btWl">${naLista ? '★ Na watchlist' : '☆ Adicionar à watchlist'}</button>
       <button type="button" class="primario" id="btAlerta">Criar alerta</button>
@@ -776,9 +800,25 @@ function adicionarWl(s){
   watchlist.push(s); gravar(CHAVE_WL, watchlist); renderWatchlist(); atualizarCotacoes([s]); agendarEnvio();
 }
 function removerWl(s){ watchlist = watchlist.filter((x) => x !== s); gravar(CHAVE_WL, watchlist); renderWatchlist(); agendarEnvio(); }
-function renderWatchlist(){
+function renderWatchlist(soPrecos){
   const el = $('wlLista');
   if (!watchlist.length) { el.innerHTML = '<div class="vazio">Sua watchlist está vazia. Use a busca e toque em “Adicionar à watchlist”.</div>'; return; }
+  const linhas = [...el.querySelectorAll('.linha')];
+  const iguais = soPrecos && linhas.length === watchlist.length && linhas.every((l, i) => l.dataset.s === watchlist[i]);
+  if (iguais) {
+    linhas.forEach((l, i) => {
+      const s = watchlist[i];
+      const c = cotacoes[s] || {};
+      l.classList.toggle('foco', s === foco);
+      l.querySelector('.p').textContent = c.preco != null ? fmtPreco(c.preco, c.moeda) : '…';
+      const v = l.querySelector('.v');
+      v.className = 'v ' + classeVar(c.variacao);
+      v.textContent = fmtVar(c.variacao);
+      const n = l.querySelector('.n');
+      if (n && !n.textContent && c.nome) n.textContent = c.nome;
+    });
+    return;
+  }
   el.innerHTML = watchlist.map((s) => {
     const c = cotacoes[s] || {};
     return `<div class="linha${s === foco ? ' foco' : ''}" data-s="${esc(s)}">
@@ -804,8 +844,59 @@ async function atualizarCotacoes(lista){
     cotacoes[s] = { preco: d.preco, variacao: d.anterior ? ((d.preco - d.anterior) / d.anterior) * 100 : null, moeda: d.moeda, nome: d.nome, ts: Date.now() };
   }));
   renderWatchlist();
-  $('wlAtualizado').textContent = 'atualizado ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const wlHora = $('wlAtualizado');
+  wlHora.classList.remove('ao-vivo');
+  wlHora.textContent = 'atualizado ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   checarAlertas();
+}
+function simbolosAoVivo(){
+  const lista = [];
+  const por = (s) => {
+    s = String(s || '').trim().toUpperCase();
+    if (s && !lista.includes(s)) lista.push(s);
+  };
+  watchlist.forEach(por);
+  por(foco);
+  alertas.filter((a) => !a.disparado).forEach((a) => por(a.symbol));
+  return lista;
+}
+function pintarPrecoFoco(preco){
+  if (!historicoAtual || preco == null || !isFinite(preco)) return;
+  if (String(historicoAtual.symbol || '').toUpperCase() !== String(foco || '').toUpperCase()) return;
+  historicoAtual.preco = preco;
+  const el = $('ativoPreco');
+  if (el) el.textContent = fmtPreco(preco, historicoAtual.moeda);
+  const pts = historicoAtual.pontos || [];
+  const inicio = periodo === '1d' ? historicoAtual.anterior : (pts.length ? pts[0][1] : historicoAtual.anterior);
+  const varPeriodo = inicio ? ((preco - inicio) / inicio) * 100 : null;
+  const v = $('ativoVar');
+  if (!v) return;
+  const rotulo = (v.querySelector('.sub') || {}).textContent || '';
+  v.className = 'var ' + classeVar(varPeriodo);
+  v.innerHTML = `${fmtVar(varPeriodo)} <span class="sub">${esc(rotulo)}</span>`;
+}
+function aplicarCotacoesAoVivo(lista){
+  if (!lista.length) return;
+  const por = new Map(lista.map((c) => [c.symbol, c]));
+  for (const c of lista) {
+    const anterior = cotacoes[c.symbol] || {};
+    cotacoes[c.symbol] = {
+      preco: c.preco,
+      variacao: c.variacao,
+      moeda: c.moeda || anterior.moeda || null,
+      nome: anterior.nome || c.nome,
+      ts: Date.now(),
+    };
+  }
+  const faixa = FAIXA_SIMBOLOS.map((s) => por.get(s)).filter(Boolean);
+  if (faixa.length) renderFaixa(faixa);
+  renderWatchlist(true);
+  const wlHora = $('wlAtualizado');
+  wlHora.classList.add('ao-vivo');
+  wlHora.textContent = 'ao vivo ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  checarAlertas();
+  const q = por.get(String(foco || '').toUpperCase());
+  if (q) pintarPrecoFoco(q.preco);
 }
 
 // ---------- Alertas ----------
@@ -1742,11 +1833,9 @@ carregarHistorico();
 atualizarCotacoes();
 carregarNoticias();
 carregarWidgets();
-setInterval(carregarFaixa, 60_000);
 setInterval(carregarPainel, 10 * 60_000);
 setInterval(atualizarPainelAgora, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarPainelAgora(); });
-setInterval(() => atualizarCotacoes(), 60_000);
 </script>
 </body>
 </html>
