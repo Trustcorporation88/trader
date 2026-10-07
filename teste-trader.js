@@ -300,14 +300,15 @@ console.log('6. busca na web e erros OK');
   // 10. Cards do painel de mercados
   const { montarCardMercado } = require('./server');
   const card = montarCardMercado({ symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' }, {
-    preco: 178000, anterior: 177000, moeda: 'BRL', pontos: Array.from({ length: 100 }, (_, i) => [i, 100 + i]),
+    preco: 178000, anterior: 100000, moeda: 'BRL',
+    pontos: [...Array.from({ length: 98 }, (_, i) => [i, 100 + i]), [98, 177000], [99, 178000]],
   });
   assert.strictEqual(card.moeda, null, 'índice não leva prefixo de moeda');
-  assert.ok(Math.abs(card.variacao - (1000 / 177000) * 100) < 1e-9);
+  assert.ok(Math.abs(card.variacao - (1000 / 177000) * 100) < 1e-9, 'variação do dia, não a de 6 meses');
   assert.strictEqual(card.variacaoPontos, 1000);
   assert.strictEqual(card.pontos.length, 48);
   assert.strictEqual(card.pontos[0], 100);
-  assert.strictEqual(card.pontos[47], 199);
+  assert.strictEqual(card.pontos[47], 178000, 'a amostra guarda o último pregão');
   const dolar = montarCardMercado({ symbol: 'USDBRL=X', nome: 'Real/Dólar', tipo: 'cambio' }, { preco: 5.42, anterior: 5.4, moeda: 'BRL', pontos: [[1, 5.4], [2, 5.42]] });
   assert.strictEqual(dolar.moeda, 'BRL');
   assert.strictEqual(dolar.pontos.length, 2);

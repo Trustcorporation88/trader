@@ -840,16 +840,18 @@ function amostrar(valores, n) {
 function montarCardMercado(def, historico) {
   const preco = historico && historico.preco;
   if (preco == null || !isFinite(preco)) return null;
-  const anterior = historico.anterior != null && isFinite(historico.anterior) ? historico.anterior : null;
+  // O "anterior" do Yahoo num gráfico de 6 meses é o começo do período, não o pregão de ontem.
+  // A variação do dia sai dos dois últimos fechamentos diários.
   const closes = ((historico && historico.pontos) || []).map((p) => p[1]).filter((v) => v != null && isFinite(v));
+  const ontem = closes.length >= 2 ? closes[closes.length - 2] : null;
   return {
     symbol: def.symbol,
     nome: def.nome,
     tipo: def.tipo,
     moeda: def.tipo === 'cambio' ? (historico.moeda || 'BRL') : null,
     preco,
-    variacao: anterior ? ((preco - anterior) / anterior) * 100 : null,
-    variacaoPontos: anterior != null ? preco - anterior : null,
+    variacao: ontem ? ((preco - ontem) / ontem) * 100 : null,
+    variacaoPontos: ontem != null ? preco - ontem : null,
     pontos: amostrar(closes, 48),
   };
 }
