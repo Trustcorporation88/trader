@@ -84,6 +84,9 @@ const limitar = criarLimitador(RATE_LIMIT);
 const limitarDados = criarLimitador(Math.max(10, RATE_LIMIT * 2));
 // Busca da Exa: cobrada por requisição, então o limite é bem menor.
 const limitarBusca = criarLimitador(Math.max(3, Math.ceil(RATE_LIMIT / 4)));
+// O painel ao vivo pergunta uma vez por segundo. Contador separado: o limitarDados (40/min) recusaria isso.
+// 180/min cabe dois monitores abertos no mesmo IP, com folga para recarregar a página.
+const limitarPainelAoVivo = criarLimitador(180);
 
 // ---------- Senha única opcional ----------
 function exigirSenha(req, res, next) {
@@ -902,6 +905,70 @@ app.get('/api/monitor/painel', limitarDados, async (_req, res) => {
   res.json(data);
 });
 
+/** Cotação de 1 dia do Yahoo -> preço e variação do card. Sem desenho: o de 6 meses fica no /painel. */
+function cotacaoParaCard(def, cotacao) {
+  const preco = cotacao && cotacao.regularMarketPrice;
+  if (preco == null || !isFinite(preco)) return null;
+  const variacao = cotacao.regularMarketChangePercent;
+  const varOk = variacao != null && isFinite(variacao);
+  const anterior = varOk && variacao > -100 ? preco / (1 + variacao / 100) : null;
+  return {
+    symbol: def.symbol,
+    nome: def.nome,
+    tipo: def.tipo,
+    moeda: def.tipo === 'cambio' ? 'BRL' : null,
+    preco,
+    variacao: varOk ? variacao : null,
+    variacaoPontos: anterior != null ? preco - anterior : null,
+  };
+}
+
+// Uma consulta ao Yahoo para todo mundo, e só enquanto alguém está com o monitor aberto.
+// Não passa pela Fincept: crédito de lá continua só no clique do GARCH.
+let _painelAoVivo = { itens: [], atualizadoEm: null, fonte: 'Yahoo Finance' };
+let _painelBuscando = false;
+let _ultimoPedidoPainel = 0;
+let _painelTimer = null;
+let _painelErroEm = 0;
+
+async function cicloPainelAoVivo() {
+  if (_painelBuscando) return;
+  if (Date.now() - _ultimoPedidoPainel > 6_000) {
+    if (_painelTimer) { clearInterval(_painelTimer); _painelTimer = null; }
+    return;
+  }
+  _painelBuscando = true;
+  try {
+    const data = await fetchCotacoes(PAINEL_MERCADO.map((d) => d.symbol));
+    const porSimbolo = new Map((data.quoteResponse.result || []).map((q) => [q.symbol, q]));
+    const anteriores = new Map((_painelAoVivo.itens || []).map((c) => [c.symbol, c]));
+    const itens = PAINEL_MERCADO.map((def) => {
+      const q = porSimbolo.get(def.symbol);
+      return (q && cotacaoParaCard(def, q)) || anteriores.get(def.symbol) || null;
+    }).filter(Boolean);
+    if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte: 'Yahoo Finance' };
+  } catch (e) {
+    const agora = Date.now();
+    if (agora - _painelErroEm > 60_000) { _painelErroEm = agora; log('erro', 'painel ao vivo:', e.message); }
+  } finally {
+    _painelBuscando = false;
+  }
+}
+
+function pedirPainelAoVivo() {
+  _ultimoPedidoPainel = Date.now();
+  if (_painelTimer) return;
+  _painelTimer = setInterval(cicloPainelAoVivo, 1000);
+  _painelTimer.unref();
+  cicloPainelAoVivo();
+}
+
+app.get('/api/monitor/painel/agora', limitarPainelAoVivo, (_req, res) => {
+  pedirPainelAoVivo();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(_painelAoVivo);
+});
+
 // ---------- Macro Brasil (Banco Central, SGS — sem chave) ----------
 const SERIES_BCB = [
   { id: 432, nome: 'Selic (meta)', sufixo: '% a.a.' },
@@ -1345,4 +1412,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard };
