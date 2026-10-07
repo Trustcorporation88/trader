@@ -191,6 +191,14 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
 /* --- Widgets TradingView --- */
 .tv{height:460px;border-radius:10px;overflow:hidden}
 .tv .tradingview-widget-container,.tv .tradingview-widget-container__widget{height:100%;width:100%}
+.painel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+button.card-mercado{display:block;width:100%;text-align:left;background:#0d1626;border:1px solid var(--borda);border-radius:12px;padding:12px 14px 8px;color:inherit}
+button.card-mercado:hover{border-color:var(--laranja)}
+.card-mercado .rotulo{font-size:.72rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--texto2)}
+.card-mercado .preco{font:600 1.45rem/1.2 ui-monospace,monospace;margin-top:4px}
+.card-mercado .delta{font:.82rem ui-monospace,monospace;margin-top:2px}
+.card-mercado svg{width:100%;height:64px;display:block;margin-top:6px}
+@media (max-width:900px){ .painel{grid-template-columns:1fr 1fr} }
 
 /* --- Rodapé e avisos --- */
 .aviso-cvm{max-width:1400px;margin:0 auto;padding:0 20px 28px;color:var(--apagado);font-size:.76rem;text-align:center}
@@ -214,7 +222,8 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
 <header>
   <div class="marca"><div class="logo">◆</div>Agente Trader <span>Monitor</span></div>
   <nav>
-    <a href="#ativo" class="ativo">Dashboard</a>
+    <a href="#painel" class="ativo">Mercados</a>
+    <a href="#ativo">Dashboard</a>
     <a href="#watchlist">Watchlist</a>
     <a href="#alertas">Alertas</a>
     <a href="#sync">Sincronizar</a>
@@ -235,6 +244,12 @@ nav{overflow-x:auto;scrollbar-width:none;min-width:0}
 <div id="faixa"><span class="carregando">Carregando cotações…</span></div>
 
 <main>
+  <section class="cartao" id="painel">
+    <h2><span class="etiqueta">Mercados</span> Ibovespa, câmbio e Nova York <span class="extra" id="painelHora"></span></h2>
+    <div class="painel" id="painelCards"><span class="carregando">Carregando índices…</span></div>
+    <p class="nota">Variação do dia e o desenho dos últimos 6 meses (Yahoo Finance; pode ter atraso). Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais. Não é recomendação de compra ou venda.</p>
+  </section>
+
   <div class="grade-principal">
     <div class="coluna">
     <section class="cartao" id="ativo">
@@ -457,6 +472,53 @@ async function carregarFaixa(){
     ).join('') || '<span class="carregando">Sem cotações agora.</span>';
   } catch (_) { $('faixa').innerHTML = '<span class="carregando">Cotações indisponíveis no momento.</span>'; }
 }
+
+// ---------- Painel de mercados ----------
+function fmtIndice(v){
+  if (v == null || !isFinite(v)) return '—';
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtDeltaPontos(v, tipo){
+  if (v == null || !isFinite(v)) return '';
+  const casas = tipo === 'cambio' ? 4 : 2;
+  const n = v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+  return (v > 0 ? '+' : '') + n;
+}
+function sparkline(pontos, alta){
+  if (!pontos || pontos.length < 2) return '';
+  const W = 320, H = 64, m = 2;
+  let y0 = Math.min(...pontos), y1 = Math.max(...pontos);
+  if (y0 === y1) { y0 *= 0.998; y1 *= 1.002; }
+  const px = (i) => m + (i / (pontos.length - 1)) * (W - 2 * m);
+  const py = (v) => m + (1 - (v - y0) / (y1 - y0)) * (H - 2 * m);
+  const linha = pontos.map((v, i) => `${i ? 'L' : 'M'}${px(i).toFixed(1)},${py(v).toFixed(1)}`).join('');
+  const cor = alta ? '#19c8a5' : '#ff6b6b';
+  const area = `${linha}L${px(pontos.length - 1).toFixed(1)},${H - m}L${px(0).toFixed(1)},${H - m}Z`;
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${area}" fill="${cor}" fill-opacity=".16"/><path d="${linha}" fill="none" stroke="${cor}" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+function renderPainel(itens){
+  $('painelCards').innerHTML = itens.map((c) => {
+    const alta = c.variacao == null || c.variacao >= 0;
+    const preco = c.tipo === 'cambio' ? fmtPreco(c.preco, c.moeda || 'BRL') : fmtIndice(c.preco);
+    return `<button type="button" class="card-mercado" data-s="${esc(c.symbol)}">
+      <div class="rotulo">${esc(c.nome)}</div>
+      <div class="preco">${preco}</div>
+      <div class="delta ${classeVar(c.variacao)}">${fmtVar(c.variacao)} · ${fmtDeltaPontos(c.variacaoPontos, c.tipo)}</div>
+      ${sparkline(c.pontos, alta)}
+    </button>`;
+  }).join('') || '<div class="vazio">Sem cotações agora.</div>';
+  $('painelHora').textContent = 'atualizado ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+async function carregarPainel(){
+  try { renderPainel((await getJson('/api/monitor/painel')).itens || []); }
+  catch (e) { $('painelCards').innerHTML = `<div class="vazio">Índices indisponíveis: ${esc(e.message)}</div>`; }
+}
+$('painelCards').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-s]');
+  if (!b) return;
+  selecionar(b.dataset.s);
+  $('ativo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 // ---------- Busca ----------
 let buscaTimer = null, buscaSeq = 0, focoResultado = -1;
@@ -1595,7 +1657,7 @@ async function carregarGarch(){
 }
 
 // ---------- Navegação ----------
-const secoes = ['ativo', 'watchlist', 'alertas', 'sync', 'carteira', 'simulador', 'macro', 'mercado', 'noticias'];
+const secoes = ['painel', 'ativo', 'watchlist', 'alertas', 'sync', 'carteira', 'simulador', 'macro', 'mercado', 'noticias'];
 const links = [...document.querySelectorAll('nav a')];
 const obs = new IntersectionObserver((ents) => {
   ents.forEach((e) => { if (e.isIntersecting) links.forEach((a) => a.classList.toggle('ativo', a.getAttribute('href') === '#' + e.target.id)); });
@@ -1621,11 +1683,13 @@ aplicarModoGrafico();
 puxarConta();
 setInterval(puxarConta, 60_000);
 carregarFaixa();
+carregarPainel();
 carregarHistorico();
 atualizarCotacoes();
 carregarNoticias();
 carregarWidgets();
 setInterval(carregarFaixa, 60_000);
+setInterval(carregarPainel, 60_000);
 setInterval(() => atualizarCotacoes(), 60_000);
 </script>
 </body>

@@ -852,6 +852,56 @@ async function historicoComCache(simbolo, range) {
   }
 }
 
+// ---------- Painel de mercados (Ibovespa, câmbio, S&P 500, Dow Jones) ----------
+const PAINEL_MERCADO = [
+  { symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' },
+  { symbol: 'USDBRL=X', nome: 'Real/Dólar', tipo: 'cambio' },
+  { symbol: '^GSPC', nome: 'S&P 500', tipo: 'indice' },
+  { symbol: '^DJI', nome: 'Dow Jones', tipo: 'indice' },
+];
+
+/** Reduz a série para no máximo n pontos, mantendo o primeiro e o último. */
+function amostrar(valores, n) {
+  if (valores.length <= n) return valores.slice();
+  const passo = (valores.length - 1) / (n - 1);
+  return Array.from({ length: n }, (_, i) => valores[Math.round(i * passo)]);
+}
+
+/** Histórico do Yahoo -> card do painel. Índice sai em pontos; câmbio carrega a moeda. */
+function montarCardMercado(def, historico) {
+  const preco = historico && historico.preco;
+  if (preco == null || !isFinite(preco)) return null;
+  // O "anterior" do Yahoo num gráfico de 6 meses é o começo do período, não o pregão de ontem.
+  // A variação do dia sai dos dois últimos fechamentos diários.
+  const closes = ((historico && historico.pontos) || []).map((p) => p[1]).filter((v) => v != null && isFinite(v));
+  const ontem = closes.length >= 2 ? closes[closes.length - 2] : null;
+  return {
+    symbol: def.symbol,
+    nome: def.nome,
+    tipo: def.tipo,
+    moeda: def.tipo === 'cambio' ? (historico.moeda || 'BRL') : null,
+    preco,
+    variacao: ontem ? ((preco - ontem) / ontem) * 100 : null,
+    variacaoPontos: ontem != null ? preco - ontem : null,
+    pontos: amostrar(closes, 48),
+  };
+}
+
+app.get('/api/monitor/painel', limitarDados, async (_req, res) => {
+  const cache = cacheGet('painel-mercado', 60_000, false);
+  if (cache) { res.setHeader('Cache-Control', 'public, max-age=30'); return res.json(cache); }
+  const resumos = await Promise.all(PAINEL_MERCADO.map(async (def) => {
+    try { return montarCardMercado(def, await historicoComCache(def.symbol, '6mo')); }
+    catch (e) { log('erro', `painel ${def.symbol}:`, e.message); return null; }
+  }));
+  const itens = resumos.filter(Boolean);
+  if (!itens.length) return res.status(502).json({ erro: 'Falha ao buscar os índices.' });
+  const data = { itens, fonte: 'Yahoo Finance' };
+  cacheSet('painel-mercado', data);
+  res.setHeader('Cache-Control', 'public, max-age=30');
+  res.json(data);
+});
+
 // ---------- Macro Brasil (Banco Central, SGS — sem chave) ----------
 const SERIES_BCB = [
   { id: 432, nome: 'Selic (meta)', sufixo: '% a.a.' },
@@ -1295,4 +1345,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado };
