@@ -198,6 +198,8 @@ button.card-mercado:hover{border-color:var(--laranja)}
 .card-mercado .preco{font:600 1.45rem/1.2 ui-monospace,monospace;margin-top:4px}
 .card-mercado .delta{font:.82rem ui-monospace,monospace;margin-top:2px}
 .card-mercado svg{width:100%;height:64px;display:block;margin-top:6px}
+#painelHora.ao-vivo::before{content:'';display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:#19c8a5;vertical-align:1px;box-shadow:0 0 0 0 rgba(25,200,165,.55);animation:pulso-ao-vivo 1.6s ease-out infinite}
+@keyframes pulso-ao-vivo{70%{box-shadow:0 0 0 6px rgba(25,200,165,0)}100%{box-shadow:0 0 0 0 rgba(25,200,165,0)}}
 @media (max-width:900px){ .painel{grid-template-columns:1fr 1fr} }
 
 /* --- Rodapé e avisos --- */
@@ -247,7 +249,7 @@ button.card-mercado:hover{border-color:var(--laranja)}
   <section class="cartao" id="painel">
     <h2><span class="etiqueta">Mercados</span> Ibovespa, câmbio e Nova York <span class="extra" id="painelHora"></span></h2>
     <div class="painel" id="painelCards"><span class="carregando">Carregando índices…</span></div>
-    <p class="nota">Variação do dia e o desenho dos últimos 6 meses (Yahoo Finance; pode ter atraso). Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais. Não é recomendação de compra ou venda.</p>
+    <p class="nota">Preço ao vivo a cada segundo enquanto esta página está aberta (Yahoo Finance; a bolsa pode publicar com atraso e isto não gasta crédito). O desenho é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais. Não é recomendação de compra ou venda.</p>
   </section>
 
   <div class="grade-principal">
@@ -496,22 +498,74 @@ function sparkline(pontos, alta){
   const area = `${linha}L${px(pontos.length - 1).toFixed(1)},${H - m}L${px(0).toFixed(1)},${H - m}Z`;
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${area}" fill="${cor}" fill-opacity=".16"/><path d="${linha}" fill="none" stroke="${cor}" stroke-width="2" stroke-linejoin="round"/></svg>`;
 }
-function renderPainel(itens){
-  $('painelCards').innerHTML = itens.map((c) => {
-    const alta = c.variacao == null || c.variacao >= 0;
-    const preco = c.tipo === 'cambio' ? fmtPreco(c.preco, c.moeda || 'BRL') : fmtIndice(c.preco);
-    return `<button type="button" class="card-mercado" data-s="${esc(c.symbol)}">
-      <div class="rotulo">${esc(c.nome)}</div>
-      <div class="preco">${preco}</div>
-      <div class="delta ${classeVar(c.variacao)}">${fmtVar(c.variacao)} · ${fmtDeltaPontos(c.variacaoPontos, c.tipo)}</div>
-      ${sparkline(c.pontos, alta)}
-    </button>`;
-  }).join('') || '<div class="vazio">Sem cotações agora.</div>';
-  $('painelHora').textContent = 'atualizado ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+function htmlCardMercado(c){
+  const alta = c.variacao == null || c.variacao >= 0;
+  const preco = c.tipo === 'cambio' ? fmtPreco(c.preco, c.moeda || 'BRL') : fmtIndice(c.preco);
+  return `<button type="button" class="card-mercado" data-s="${esc(c.symbol)}">
+    <div class="rotulo">${esc(c.nome)}</div>
+    <div class="preco">${preco}</div>
+    <div class="delta ${classeVar(c.variacao)}">${fmtVar(c.variacao)} · ${fmtDeltaPontos(c.variacaoPontos, c.tipo)}</div>
+    ${sparkline(c.pontos, alta)}
+  </button>`;
+}
+/** O desenho de 6 meses fica; o último ponto e o preço vêm da cotação ao vivo. */
+function mesclarPainel(base, vivo){
+  if (!vivo || !vivo.length) return base;
+  const porSimbolo = new Map(vivo.map((c) => [c.symbol, c]));
+  return base.map((c) => {
+    const v = porSimbolo.get(c.symbol);
+    if (!v || v.preco == null) return c;
+    const pontos = (c.pontos || []).slice();
+    if (pontos.length) pontos[pontos.length - 1] = v.preco;
+    return { ...c, preco: v.preco, variacao: v.variacao, variacaoPontos: v.variacaoPontos, pontos };
+  });
+}
+let painelBase = [];
+let painelAoVivo = null;
+function renderPainel(itens, aoVivo){
+  const box = $('painelCards');
+  const botoes = [...box.querySelectorAll('button.card-mercado')];
+  const iguais = itens.length > 0 && botoes.length === itens.length && botoes.every((b, i) => b.dataset.s === itens[i].symbol);
+  if (!iguais) {
+    box.innerHTML = itens.map(htmlCardMercado).join('') || '<div class="vazio">Sem cotações agora.</div>';
+  } else {
+    itens.forEach((c, i) => {
+      const b = botoes[i];
+      const alta = c.variacao == null || c.variacao >= 0;
+      b.querySelector('.preco').textContent = c.tipo === 'cambio' ? fmtPreco(c.preco, c.moeda || 'BRL') : fmtIndice(c.preco);
+      const delta = b.querySelector('.delta');
+      delta.className = 'delta ' + classeVar(c.variacao);
+      delta.textContent = `${fmtVar(c.variacao)} · ${fmtDeltaPontos(c.variacaoPontos, c.tipo)}`;
+      const desenho = sparkline(c.pontos, alta);
+      const svg = b.querySelector('svg');
+      if (svg) svg.outerHTML = desenho;
+      else if (desenho) b.insertAdjacentHTML('beforeend', desenho);
+    });
+  }
+  const hora = $('painelHora');
+  hora.classList.toggle('ao-vivo', !!aoVivo);
+  const relogio = { hour: '2-digit', minute: '2-digit' };
+  if (aoVivo) relogio.second = '2-digit';
+  hora.textContent = (aoVivo ? 'ao vivo ' : 'atualizado ') + new Date().toLocaleTimeString('pt-BR', relogio);
 }
 async function carregarPainel(){
-  try { renderPainel((await getJson('/api/monitor/painel')).itens || []); }
-  catch (e) { $('painelCards').innerHTML = `<div class="vazio">Índices indisponíveis: ${esc(e.message)}</div>`; }
+  try {
+    painelBase = (await getJson('/api/monitor/painel')).itens || [];
+    renderPainel(mesclarPainel(painelBase, painelAoVivo), !!painelAoVivo);
+  } catch (e) {
+    if (!painelBase.length && !(painelAoVivo && painelAoVivo.length)) {
+      $('painelCards').innerHTML = `<div class="vazio">Índices indisponíveis: ${esc(e.message)}</div>`;
+    }
+  }
+}
+async function atualizarPainelAgora(){
+  if (document.hidden) return;
+  try {
+    const vivo = (await getJson('/api/monitor/painel/agora')).itens || [];
+    if (!vivo.length) return;
+    painelAoVivo = vivo;
+    renderPainel(painelBase.length ? mesclarPainel(painelBase, vivo) : vivo, true);
+  } catch (_) { /* mantém o último preço na tela */ }
 }
 $('painelCards').addEventListener('click', (ev) => {
   const b = ev.target.closest('button[data-s]');
@@ -1689,7 +1743,9 @@ atualizarCotacoes();
 carregarNoticias();
 carregarWidgets();
 setInterval(carregarFaixa, 60_000);
-setInterval(carregarPainel, 60_000);
+setInterval(carregarPainel, 10 * 60_000);
+setInterval(atualizarPainelAgora, 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarPainelAgora(); });
 setInterval(() => atualizarCotacoes(), 60_000);
 </script>
 </body>

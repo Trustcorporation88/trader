@@ -305,7 +305,7 @@ console.log('6. busca na web e erros OK');
   console.log('9. fronteira, simulador de ordens e dados globais OK');
 
   // 10. Cards do painel de mercados
-  const { montarCardMercado } = require('./server');
+  const { montarCardMercado, cotacaoParaCard } = require('./server');
   const card = montarCardMercado({ symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' }, {
     preco: 178000, anterior: 100000, moeda: 'BRL',
     pontos: [...Array.from({ length: 98 }, (_, i) => [i, 100 + i]), [98, 177000], [99, 178000]],
@@ -320,6 +320,17 @@ console.log('6. busca na web e erros OK');
   assert.strictEqual(dolar.moeda, 'BRL');
   assert.strictEqual(dolar.pontos.length, 2);
   assert.strictEqual(montarCardMercado({ symbol: 'X', nome: 'X', tipo: 'indice' }, { preco: null, pontos: [] }), null);
+  const vivo = cotacaoParaCard({ symbol: '^GSPC', nome: 'S&P 500', tipo: 'indice' }, { regularMarketPrice: 7770, regularMarketChangePercent: -0.5 });
+  assert.strictEqual(vivo.moeda, null, 'cotação ao vivo de índice também sai em pontos');
+  assert.strictEqual(vivo.preco, 7770);
+  assert.strictEqual(vivo.variacao, -0.5);
+  assert.ok(Math.abs(vivo.variacaoPontos - (7770 - 7770 / 0.995)) < 1e-6, 'pontos do dia a partir da variação');
+  assert.strictEqual(vivo.pontos, undefined, 'o desenho de 6 meses não vem na cotação de 1 segundo');
+  const fx = cotacaoParaCard({ symbol: 'USDBRL=X', nome: 'Real/Dólar', tipo: 'cambio' }, { regularMarketPrice: 5, regularMarketChangePercent: 0 });
+  assert.strictEqual(fx.moeda, 'BRL');
+  assert.strictEqual(fx.variacaoPontos, 0);
+  assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: null }), null);
+  assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: 10, regularMarketChangePercent: -100 }).variacaoPontos, null);
   console.log('10. painel de mercados OK');
 
   console.log('\nteste-trader: todos os cenários passaram.');
