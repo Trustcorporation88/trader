@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node teste-trader.js",
-    "check": "node --check server.js && node --check trader.js && node --check monitor.js && node --check carteira.js && node --check teste-trader.js"
+    "check": "node --check server.js && node --check trader.js && node --check monitor.js && node --check carteira.js && node --check simulador.js && node --check dados-globais.js && node --check teste-trader.js"
   },
   "engines": {
     "node": ">=18"

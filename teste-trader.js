@@ -200,5 +200,102 @@ console.log('6. busca na web e erros OK');
   assert.strictEqual(montarFundamentos('XYZ', {}, { metric: {} }), null, 'sem perfil nem métricas = sem fundamentos');
   console.log('8. carteira simulada e fundamentos OK');
 
+  // 9. Métricas novas da carteira, simulador de ordens e dados globais
+  assert.ok(analise.var95Parametrico > 0 && Math.abs(analise.var95ParametricoValor - analise.var95Parametrico * analise.total) < 1e-9);
+  assert.ok(analise.sortino != null && isFinite(analise.sortino), 'Sortino com taxa livre informada');
+  assert.strictEqual(soEuro.sortino, null, 'sem taxa livre não há Sortino');
+  const fr = analise.fronteira;
+  assert.ok(fr && fr.simulacoes > 1000 && fr.pontos.length <= 401, 'fronteira simulada e amostrada para o gráfico');
+  for (const c of [fr.atual, fr.minimaVariancia, fr.maximoSharpe]) {
+    assert.ok(Math.abs(c.pesos.reduce((a, b) => a + b, 0) - 1) < 1e-9 && c.pesos.every((w) => w >= 0), 'pesos somam 1, só comprados');
+  }
+  assert.ok(fr.minimaVariancia.vol <= fr.atual.vol + 1e-12, 'mínima variância não tem mais risco que a atual');
+  assert.ok(fr.minimaVariancia.pesos[1] > 0.99, 'ativo de preço constante domina a mínima variância');
+  assert.deepStrictEqual(carteira.fronteiraEficiente([[0.01, -0.01, 0.02], [0.0, 0.01, -0.01]], { semente: 3 }).pontos,
+    carteira.fronteiraEficiente([[0.01, -0.01, 0.02], [0.0, 0.01, -0.01]], { semente: 3 }).pontos, 'mesma semente, mesma nuvem');
+  assert.strictEqual(carteira.fronteiraEficiente([[0.01, 0.02]]), null, 'um ativo só não tem fronteira');
+
+  const simulador = require('./simulador');
+  const ordem = (id, lado, quantidade, preco, ts, extra = {}) => ({ id, symbol: 'petr4.sa', lado, quantidade, preco, ts, moeda: 'brl', ...extra });
+  const ordens = simulador.normalizarOrdens([
+    ordem('o003', 'venda', 100, 33, 3, { custo: 5 }),
+    ordem('o001', 'compra', 100, 30, 1, { custo: 10 }),
+    ordem('o002', 'compra', 100, 32, 2),
+    ordem('o004', 'venda', 100, 29, 4),
+    ordem('o005', 'venda', 50, 40, 5),
+    { id: 'o006', symbol: 'AAPL', lado: 'compra', quantidade: 2, preco: 100, ts: 6, moeda: 'USD' },
+  ]);
+  assert.deepStrictEqual(ordens.map((o) => o.id), ['o001', 'o002', 'o003', 'o004', 'o005', 'o006'], 'ordens em ordem cronológica');
+  assert.strictEqual(ordens[0].symbol, 'PETR4.SA');
+  assert.strictEqual(ordens[0].moeda, 'BRL');
+  assert.throws(() => simulador.normalizarOrdens([ordem('o001', 'short', 1, 1, 1)]), /Lado/);
+  assert.throws(() => simulador.normalizarOrdens([ordem('o001', 'compra', 1, 0, 1)]), /Preço/);
+  assert.throws(() => simulador.normalizarOrdens([ordem('o001', 'compra', 1, 1, 1), ordem('o001', 'compra', 1, 1, 2)]), /identificador/);
+  assert.throws(() => simulador.normalizarOrdens([ordem('o001', 'compra', 1, 1, 1, { custo: -1 })]), /Custo/);
+  assert.throws(() => simulador.normalizarOrdens(Array.from({ length: 301 }, (_, i) => ordem(`id${i}xx`, 'compra', 1, 1, i + 1))), /até 300/);
+  const cons = simulador.consolidarOrdens(ordens);
+  const petr = cons.posicoes.find((p) => p.symbol === 'PETR4.SA');
+  // PM = (100*30 + 10 + 100*32) / 200 = 31,05; venda 1: (33-31,05)*100 - 5 = 190; venda 2: (29-31,05)*100 = -205
+  assert.ok(Math.abs(cons.fechadas[0].resultado - 190) < 1e-9 && Math.abs(cons.fechadas[1].resultado - -205) < 1e-9, 'resultado pelo preço médio, com custos');
+  assert.strictEqual(petr.quantidade, 0, 'posição zerada');
+  assert.ok(Math.abs(petr.realizado - -15) < 1e-9);
+  assert.strictEqual(cons.fechadas.length, 2, 'venda sem posição não vira operação');
+  assert.match(cons.avisos[0], /sem posição suficiente/, 'venda a descoberto ignorada com aviso');
+  const est = cons.estatisticas;
+  assert.strictEqual(est.operacoes, 2);
+  assert.strictEqual(est.taxaAcerto, 0.5);
+  assert.strictEqual(est.sequenciaPerdas, 1);
+  assert.ok(Math.abs(est.expectativa - (0.5 * est.ganhoMedio + 0.5 * est.perdaMedia)) < 1e-12);
+  assert.deepStrictEqual(simulador.estatisticasOperacoes([]), { operacoes: 0 });
+  const av = simulador.avaliarSimulador(cons, { AAPL: { preco: 110, moeda: 'USD', nome: 'Apple' } }, 5);
+  assert.strictEqual(av.totais.valor, 2 * 110 * 5, 'posição em dólar convertida pelo câmbio de hoje');
+  assert.strictEqual(av.totais.naoRealizado, 2 * 10 * 5);
+  assert.ok(Math.abs(av.totais.realizado - -15) < 1e-9);
+  const semCambio = simulador.avaliarSimulador(cons, { AAPL: { preco: 110, moeda: 'USD' } }, null);
+  assert.ok(semCambio.avisos.some((a) => /câmbio/.test(a)) && semCambio.totais.valor === 0, 'sem câmbio, dólar fica fora da soma');
+  const contaComOrdens = monitor.normalizarConta({ watchlist: [], alertas: [], ordens: [ordem('o001', 'compra', 1, 10, 1)] });
+  assert.strictEqual(contaComOrdens.ordens[0].symbol, 'PETR4.SA');
+  assert.strictEqual(monitor.normalizarConta({ watchlist: [], alertas: [] }).ordens, undefined, 'navegador antigo não apaga as ordens');
+  assert.deepStrictEqual(monitor.contaPublica({ watchlist: [], alertas: [], email: '', atualizado: 1 }).ordens, []);
+
+  const dg = require('./dados-globais');
+  const bm = dg.normalizarBancoMundial(dg.INDICADORES_BM[0], [{ page: 1 }, [
+    { countryiso3code: 'BRA', date: '2024', value: 3.4 }, { countryiso3code: 'BRA', date: '2025', value: 2.3 },
+    { countryiso3code: 'USA', date: '2025', value: null }, { country: { id: 'CHN' }, date: '2025', value: 5 },
+  ]]);
+  assert.deepStrictEqual(bm.valores, { BRA: { valor: 2.3, ano: 2025 }, CHN: { valor: 5, ano: 2025 } }, 'Banco Mundial: ano mais recente, sem nulos');
+  assert.deepStrictEqual(dg.normalizarBancoMundial(dg.INDICADORES_BM[0], { message: 'erro' }).valores, {});
+  const paises = dg.normalizarPaisesFincept({ success: true, data: [
+    { country: 'Brazil', bond_yield_10y: 13.9, cb_rate: '15.00', sp_rating: 'BB', cds_5y: 160.2, default_probability: 2.7, extra: { x: 1 } },
+    { country: 'Narnia', bond_yield_10y: 1 },
+    { country_slug: 'united-states', yield_10y: 4.1, rating: 'AA+' },
+  ] });
+  assert.deepStrictEqual(paises.map((p) => p.pais), ['Brasil', 'EUA'], 'só os países escolhidos, na ordem');
+  const br = Object.fromEntries(paises[0].campos.map((c) => [c.rotulo, c.valor]));
+  assert.strictEqual(br['Juro 10 anos'], 13.9);
+  assert.strictEqual(br['Juro do banco central'], 15, 'número em texto vira número');
+  assert.strictEqual(br['Rating S&P'], 'BB');
+  assert.strictEqual(br['CDS 5 anos (pb)'], 160.2);
+  assert.strictEqual(br['Prob. de default'], 2.7);
+  assert.throws(() => dg.normalizarPaisesFincept({ success: false, message: { error: 'unauthenticated', message: 'API key required' } }), /API key required/);
+  const agenda = dg.normalizarAgendaFincept({ success: true, data: { events: [
+    { date: '2026-10-08T12:30:00', country: 'United States', event: 'CPI YoY', actual: null, forecast: '2.9%', previous: '3.0%', importance: 3 },
+    { date: '2026-10-07T09:00:00', event: 'IPCA', te_forecast: '0.4%' },
+    { country: 'BR' },
+  ] } }, 'BR');
+  assert.deepStrictEqual(agenda.map((e) => e.evento), ['IPCA', 'CPI YoY'], 'agenda ordenada por data, sem evento incompleto');
+  assert.strictEqual(agenda[0].pais, 'BR', 'país da consulta quando a fonte não informa');
+  assert.strictEqual(agenda[0].previsao, '0.4%');
+  assert.strictEqual(agenda[1].importancia, '3');
+  const rp = dg.retornosPercentuais([[1, 100], [2, 110], [3, 0], [4, 99]]);
+  assert.ok(rp.length === 1 && Math.abs(rp[0] - 100 * Math.log(1.1)) < 1e-12, 'retornos em % ignoram preço zerado');
+  const g1 = dg.normalizarGarchFincept({ success: true, data: { forecast_volatility: [2, 2.1], params: { omega: 0.1, alpha: 0.08, beta: 0.9 } } });
+  assert.ok(Math.abs(g1.diaria[0] - 0.02) < 1e-12 && Math.abs(g1.anual[0] - 0.02 * Math.sqrt(252)) < 1e-12, 'volatilidade em % vira fração');
+  assert.deepStrictEqual(g1.parametros, { omega: 0.1, alpha: 0.08, beta: 0.9 });
+  const g2 = dg.normalizarGarchFincept({ data: { forecast: { variance: [4, 9] } } });
+  assert.deepStrictEqual(g2.diaria, [0.02, 0.03], 'variância vira volatilidade');
+  assert.throws(() => dg.normalizarGarchFincept({ data: { ok: true } }), /sem previsão/);
+  console.log('9. fronteira, simulador de ordens e dados globais OK');
+
   console.log('\nteste-trader: todos os cenários passaram.');
 })().catch((e) => { console.error(e); process.exit(1); });
