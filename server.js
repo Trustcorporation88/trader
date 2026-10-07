@@ -343,6 +343,7 @@ function fetchCotacao(simbolo) {
             shortName: meta.shortName || simbolo,
             regularMarketPrice: preco,
             regularMarketChangePercent: variacao,
+            moeda: meta.currency || null,
             marketState: meta.marketState || null,
           });
         } catch (e) { reject(e); }
@@ -905,6 +906,40 @@ app.get('/api/monitor/painel', limitarDados, async (_req, res) => {
   res.json(data);
 });
 
+/**
+ * Próximo lote do ciclo ao vivo. Os símbolos fixos (faixa e cards) entram em todo lote,
+ * para não esperarem a watchlist. O restante reveza nas vagas que sobram.
+ */
+function proximoLoteAoVivo(fixos, todos, cursor, tamanho) {
+  const conjunto = new Set(todos);
+  const visto = new Set();
+  const base = [];
+  for (const s of fixos) {
+    if (conjunto.has(s) && !visto.has(s)) { base.push(s); visto.add(s); }
+  }
+  const resto = todos.filter((s) => !visto.has(s));
+  const vagas = Math.max(0, tamanho - base.length);
+  if (resto.length <= vagas) return { lote: base.concat(resto), cursor: 0 };
+  const lote = base.slice();
+  for (let i = 0; i < vagas; i++) lote.push(resto[(cursor + i) % resto.length]);
+  return { lote, cursor: (cursor + vagas) % resto.length };
+}
+
+/** Lista vinda do navegador: tickers válidos, sem repetir, com teto. */
+function filtrarSimbolosAoVivo(texto, max) {
+  const vistos = new Set();
+  const saida = [];
+  const limite = max > 0 ? max : 0;
+  for (const parte of String(texto || '').split(',')) {
+    const s = parte.trim().toUpperCase();
+    if (!/^[A-Za-z0-9.^=-]{1,20}$/.test(s) || vistos.has(s)) continue;
+    if (saida.length >= limite) break;
+    vistos.add(s);
+    saida.push(s);
+  }
+  return saida;
+}
+
 /** Cotação de 1 dia do Yahoo -> preço e variação do card. Sem desenho: o de 6 meses fica no /painel. */
 function cotacaoParaCard(def, cotacao) {
   const preco = cotacao && cotacao.regularMarketPrice;
@@ -923,50 +958,109 @@ function cotacaoParaCard(def, cotacao) {
   };
 }
 
-// Uma consulta ao Yahoo para todo mundo, e só enquanto alguém está com o monitor aberto.
-// Não passa pela Fincept: crédito de lá continua só no clique do GARCH.
+// Uma consulta ao Yahoo para todo mundo, e só enquanto alguém está com a página aberta.
+// A faixa, os quatro cards e a watchlist saem daqui. Não passa pela Fincept.
+const MAX_EXTRA_AO_VIVO = 40;
+const LOTE_EXTRA_AO_VIVO = 10;
+let _quotesAoVivo = new Map();
+let _interesseAoVivo = new Map();
 let _painelAoVivo = { itens: [], atualizadoEm: null, fonte: 'Yahoo Finance' };
-let _painelBuscando = false;
+let _fixosBuscando = false;
+let _extrasBuscando = false;
 let _ultimoPedidoPainel = 0;
 let _painelTimer = null;
 let _painelErroEm = 0;
+let _cursorExtra = 0;
 
-async function cicloPainelAoVivo() {
-  if (_painelBuscando) return;
-  if (Date.now() - _ultimoPedidoPainel > 6_000) {
-    if (_painelTimer) { clearInterval(_painelTimer); _painelTimer = null; }
-    return;
+function registrarInteresseAoVivo(extras) {
+  const agora = Date.now();
+  for (const s of SIMBOLOS_COTACOES) _interesseAoVivo.set(s, agora);
+  for (const s of extras) {
+    if (_interesseAoVivo.size >= SIMBOLOS_COTACOES.length + MAX_EXTRA_AO_VIVO && !_interesseAoVivo.has(s)) continue;
+    _interesseAoVivo.set(s, agora);
   }
-  _painelBuscando = true;
+  const corte = agora - 6_000;
+  for (const [s, t] of _interesseAoVivo) if (t < corte) _interesseAoVivo.delete(s);
+}
+
+function guardarCotacoesAoVivo(lista) {
+  for (const q of lista || []) if (q && q.symbol) _quotesAoVivo.set(q.symbol, q);
+  const anteriores = new Map((_painelAoVivo.itens || []).map((c) => [c.symbol, c]));
+  const itens = PAINEL_MERCADO.map((def) => {
+    const q = _quotesAoVivo.get(def.symbol);
+    return (q && cotacaoParaCard(def, q)) || anteriores.get(def.symbol) || null;
+  }).filter(Boolean);
+  if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte: 'Yahoo Finance' };
+}
+
+function cotacoesPublicas(simbolos) {
+  const lista = [];
+  const vistos = new Set();
+  for (const s of [...SIMBOLOS_COTACOES, ...simbolos]) {
+    if (vistos.has(s)) continue;
+    vistos.add(s);
+    const q = _quotesAoVivo.get(s);
+    if (!q || q.regularMarketPrice == null) continue;
+    lista.push({
+      symbol: q.symbol,
+      nome: q.shortName || s,
+      preco: q.regularMarketPrice,
+      variacao: q.regularMarketChangePercent,
+      moeda: q.moeda || null,
+    });
+  }
+  return lista;
+}
+
+async function buscarLoteAoVivo(simbolos, marcar) {
+  if (!simbolos.length) { marcar(); return; }
   try {
-    const data = await fetchCotacoes(PAINEL_MERCADO.map((d) => d.symbol));
-    const porSimbolo = new Map((data.quoteResponse.result || []).map((q) => [q.symbol, q]));
-    const anteriores = new Map((_painelAoVivo.itens || []).map((c) => [c.symbol, c]));
-    const itens = PAINEL_MERCADO.map((def) => {
-      const q = porSimbolo.get(def.symbol);
-      return (q && cotacaoParaCard(def, q)) || anteriores.get(def.symbol) || null;
-    }).filter(Boolean);
-    if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte: 'Yahoo Finance' };
+    const data = await fetchCotacoes(simbolos);
+    guardarCotacoesAoVivo(data.quoteResponse.result);
   } catch (e) {
     const agora = Date.now();
     if (agora - _painelErroEm > 60_000) { _painelErroEm = agora; log('erro', 'painel ao vivo:', e.message); }
   } finally {
-    _painelBuscando = false;
+    marcar();
   }
 }
 
-function pedirPainelAoVivo() {
+function cicloPainelAoVivo() {
+  if (Date.now() - _ultimoPedidoPainel > 6_000 || !_interesseAoVivo.size) {
+    if (_painelTimer) { clearInterval(_painelTimer); _painelTimer = null; }
+    _interesseAoVivo.clear();
+    return;
+  }
+  const todos = [..._interesseAoVivo.keys()];
+  if (!_fixosBuscando) {
+    const fixos = SIMBOLOS_COTACOES.filter((s) => _interesseAoVivo.has(s));
+    _fixosBuscando = true;
+    buscarLoteAoVivo(fixos, () => { _fixosBuscando = false; });
+  }
+  if (!_extrasBuscando) {
+    const { lote, cursor } = proximoLoteAoVivo([], todos.filter((s) => !SIMBOLOS_COTACOES.includes(s)), _cursorExtra, LOTE_EXTRA_AO_VIVO);
+    _cursorExtra = cursor;
+    if (lote.length) {
+      _extrasBuscando = true;
+      buscarLoteAoVivo(lote, () => { _extrasBuscando = false; });
+    }
+  }
+}
+
+function pedirPainelAoVivo(extras) {
   _ultimoPedidoPainel = Date.now();
+  registrarInteresseAoVivo(extras);
   if (_painelTimer) return;
   _painelTimer = setInterval(cicloPainelAoVivo, 1000);
   _painelTimer.unref();
   cicloPainelAoVivo();
 }
 
-app.get('/api/monitor/painel/agora', limitarPainelAoVivo, (_req, res) => {
-  pedirPainelAoVivo();
+app.get('/api/monitor/painel/agora', limitarPainelAoVivo, (req, res) => {
+  const extras = filtrarSimbolosAoVivo(req.query.symbols, MAX_EXTRA_AO_VIVO);
+  pedirPainelAoVivo(extras);
   res.setHeader('Cache-Control', 'no-store');
-  res.json(_painelAoVivo);
+  res.json({ ..._painelAoVivo, cotacoes: cotacoesPublicas(extras) });
 });
 
 // ---------- Macro Brasil (Banco Central, SGS — sem chave) ----------
@@ -1412,4 +1506,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, proximoLoteAoVivo, filtrarSimbolosAoVivo };
