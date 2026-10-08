@@ -856,10 +856,12 @@ async function historicoComCache(simbolo, range) {
   }
 }
 
-// ---------- Painel de mercados (Ibovespa, câmbio, S&P 500, Dow Jones) ----------
+// ---------- Painel de mercados (Ibovespa, câmbio, Bitcoin, Brent, S&P 500, Dow Jones) ----------
 const PAINEL_MERCADO = [
   { symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' },
   { symbol: 'USDBRL=X', nome: 'Real/Dólar', tipo: 'cambio' },
+  { symbol: 'BTC-USD', nome: 'Bitcoin', tipo: 'usd' },
+  { symbol: 'BZ=F', nome: 'Brent', tipo: 'usd' },
   { symbol: '^GSPC', nome: 'S&P 500', tipo: 'indice' },
   { symbol: '^DJI', nome: 'Dow Jones', tipo: 'indice' },
 ];
@@ -869,6 +871,13 @@ function amostrar(valores, n) {
   if (valores.length <= n) return valores.slice();
   const passo = (valores.length - 1) / (n - 1);
   return Array.from({ length: n }, (_, i) => valores[Math.round(i * passo)]);
+}
+
+/** Índice fica sem moeda (pontos). Câmbio em reais. Bitcoin e Brent em dólar. */
+function moedaDoCard(def, moedaHistorico) {
+  if (def.tipo === 'cambio') return moedaHistorico || 'BRL';
+  if (def.tipo === 'usd') return 'USD';
+  return null;
 }
 
 /** Histórico do Yahoo -> card do painel. Índice sai em pontos; câmbio carrega a moeda. */
@@ -883,7 +892,7 @@ function montarCardMercado(def, historico) {
     symbol: def.symbol,
     nome: def.nome,
     tipo: def.tipo,
-    moeda: def.tipo === 'cambio' ? (historico.moeda || 'BRL') : null,
+    moeda: moedaDoCard(def, historico && historico.moeda),
     preco,
     variacao: ontem ? ((preco - ontem) / ontem) * 100 : null,
     variacaoPontos: ontem != null ? preco - ontem : null,
@@ -951,7 +960,7 @@ function cotacaoParaCard(def, cotacao) {
     symbol: def.symbol,
     nome: def.nome,
     tipo: def.tipo,
-    moeda: def.tipo === 'cambio' ? 'BRL' : null,
+    moeda: moedaDoCard(def),
     preco,
     variacao: varOk ? variacao : null,
     variacaoPontos: anterior != null ? preco - anterior : null,
@@ -959,7 +968,7 @@ function cotacaoParaCard(def, cotacao) {
 }
 
 // Uma consulta ao Yahoo para todo mundo, e só enquanto alguém está com a página aberta.
-// A faixa, os quatro cards e a watchlist saem daqui. Não passa pela Fincept.
+// A faixa, os cards e a watchlist saem daqui. Não passa pela Fincept.
 const MAX_EXTRA_AO_VIVO = 40;
 const LOTE_EXTRA_AO_VIVO = 10;
 let _quotesAoVivo = new Map();

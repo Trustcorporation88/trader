@@ -192,11 +192,12 @@ input,select{max-width:100%}
 /* --- Widgets TradingView --- */
 .tv{height:460px;border-radius:10px;overflow:hidden}
 .tv .tradingview-widget-container,.tv .tradingview-widget-container__widget{height:100%;width:100%}
-.painel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.painel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (min-width:1200px){ .painel{grid-template-columns:repeat(6,minmax(0,1fr))} }
 button.card-mercado{display:block;width:100%;text-align:left;background:#0d1626;border:1px solid var(--borda);border-radius:12px;padding:12px 14px 8px;color:inherit}
 button.card-mercado:hover{border-color:var(--laranja)}
 .card-mercado .rotulo{font-size:.72rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--texto2)}
-.card-mercado .preco{font:600 1.45rem/1.2 ui-monospace,monospace;margin-top:4px}
+.card-mercado .preco{font:600 clamp(1rem,1.5vw,1.35rem)/1.2 ui-monospace,monospace;margin-top:4px}
 .card-mercado .delta{font:.82rem ui-monospace,monospace;margin-top:2px}
 .card-mercado svg{width:100%;height:64px;display:block;margin-top:6px}
 .extra.ao-vivo::before{content:'';display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:#19c8a5;vertical-align:1px;box-shadow:0 0 0 0 rgba(25,200,165,.55);animation:pulso-ao-vivo 1.6s ease-out infinite}
@@ -266,9 +267,9 @@ button.card-mercado:hover{border-color:var(--laranja)}
 
 <main>
   <section class="cartao" id="painel">
-    <h2><span class="etiqueta">Mercados</span> Ibovespa, câmbio e Nova York <span class="extra" id="painelHora"></span></h2>
+    <h2><span class="etiqueta">Mercados</span> Ibovespa, câmbio, Bitcoin, Brent e Nova York <span class="extra" id="painelHora"></span></h2>
     <div class="painel" id="painelCards"><span class="carregando">Carregando índices…</span></div>
-    <p class="nota">Preço ao vivo a cada segundo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto (Yahoo Finance; a bolsa pode publicar com atraso e isto não gasta crédito). O desenho é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais. Não é recomendação de compra ou venda.</p>
+    <p class="nota">Preço ao vivo a cada segundo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto (Yahoo Finance; a bolsa pode publicar com atraso e isto não gasta crédito). O desenho é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais, Bitcoin e Brent em dólar. Não é recomendação de compra ou venda.</p>
   </section>
 
   <div class="grade-principal">
@@ -540,7 +541,7 @@ function sparkline(pontos, alta){
 }
 function htmlCardMercado(c){
   const alta = c.variacao == null || c.variacao >= 0;
-  const preco = c.tipo === 'cambio' ? fmtPreco(c.preco, c.moeda || 'BRL') : fmtIndice(c.preco);
+  const preco = c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco);
   return `<button type="button" class="card-mercado" data-s="${esc(c.symbol)}">
     <div class="rotulo">${esc(c.nome)}</div>
     <div class="preco">${preco}</div>
@@ -572,7 +573,7 @@ function renderPainel(itens, aoVivo){
     itens.forEach((c, i) => {
       const b = botoes[i];
       const alta = c.variacao == null || c.variacao >= 0;
-      b.querySelector('.preco').textContent = c.tipo === 'cambio' ? fmtPreco(c.preco, c.moeda || 'BRL') : fmtIndice(c.preco);
+      b.querySelector('.preco').textContent = c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco);
       const delta = b.querySelector('.delta');
       delta.className = 'delta ' + classeVar(c.variacao);
       delta.textContent = `${fmtVar(c.variacao)} · ${fmtDeltaPontos(c.variacaoPontos, c.tipo)}`;
