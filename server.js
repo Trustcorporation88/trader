@@ -864,7 +864,7 @@ async function historicoComCache(simbolo, range) {
 
 // ---------- Painel de mercados (Ibovespa, câmbio, Bitcoin, Brent, S&P 500, Dow Jones) ----------
 const PAINEL_MERCADO = [
-  { symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' },
+  { symbol: 'WIN1!', nome: 'Ibov futuro', tipo: 'indice' },
   { symbol: 'USDBRL=X', nome: 'Real/Dólar', tipo: 'cambio' },
   { symbol: 'BTC-USD', nome: 'Bitcoin', tipo: 'usd' },
   { symbol: 'BZ=F', nome: 'Brent', tipo: 'usd' },
@@ -910,6 +910,12 @@ app.get('/api/monitor/painel', limitarDados, async (_req, res) => {
   const cache = cacheGet('painel-mercado', 60_000, false);
   if (cache) { res.setHeader('Cache-Control', 'public, max-age=30'); return res.json(cache); }
   const resumos = await Promise.all(PAINEL_MERCADO.map(async (def) => {
+    // O mini índice não tem histórico no Yahoo. O card entra vazio e o preço ao vivo preenche.
+    if (def.symbol === 'WIN1!') {
+      const q = _quotesAoVivo.get(def.symbol);
+      const card = q && cotacaoParaCard(def, q);
+      return card ? { ...card, pontos: [] } : { symbol: def.symbol, nome: def.nome, tipo: def.tipo, moeda: null, preco: null, variacao: null, variacaoPontos: null, pontos: [] };
+    }
     try { return montarCardMercado(def, await historicoComCache(def.symbol, '6mo')); }
     catch (e) { log('erro', `painel ${def.symbol}:`, e.message); return null; }
   }));
@@ -1010,8 +1016,8 @@ const DOLAR_FINNHUB_MS = 2_000;
 let _dolarFinnhubBuscando = false;
 let _dolarFinnhubProxima = 0;
 let _dolarFinnhubErroEm = 0;
-// O futuro da B3 nessa fonte chega com cerca de 15 min de atraso; 5 s basta e não martela o serviço.
-const FUTUROS_B3_MS = 5_000;
+// O futuro da B3 nessa fonte chega com cerca de 15 min de atraso. 2 s acompanha o pregão sem martelar o serviço.
+const FUTUROS_B3_MS = 2_000;
 let _futurosBuscando = false;
 let _futurosProxima = 0;
 let _futurosErroEm = 0;
@@ -1034,9 +1040,7 @@ function guardarCotacoesAoVivo(lista) {
     const q = _quotesAoVivo.get(def.symbol);
     return (q && cotacaoParaCard(def, q)) || anteriores.get(def.symbol) || null;
   }).filter(Boolean);
-  const dolar = _quotesAoVivo.get('USDBRL=X');
-  const fonte = dolar && dolar.fonte === 'TradingView' ? 'Yahoo Finance; dólar ao vivo' : 'Yahoo Finance';
-  if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte };
+  if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte: 'Yahoo Finance' };
 }
 
 /**
@@ -1091,7 +1095,10 @@ async function buscarLoteAoVivo(simbolos, marcar) {
   }
 }
 
-/** Cotação internacional do USD/BRL que está andando agora. A Finnhub não devolveu esse par na chave do site. */
+/**
+ * Cotação internacional do USD/BRL. Fica de reserva no código: no pregão de 26/10
+ * ela parou perto de R$ 5,02 e não entra no ciclo, para não apagar o Yahoo.
+ */
 function cotacaoDolarStreaming(linha) {
   const preco = linha && Number(linha.close);
   if (!isFinite(preco) || preco < 3 || preco > 8) return null;
@@ -1171,11 +1178,11 @@ function cicloPainelAoVivo() {
   }
   const todos = [..._interesseAoVivo.keys()];
   atualizarFuturosB3();
-  if (_interesseAoVivo.has('USDBRL=X')) atualizarDolarAoVivo();
+  // O Real/Dólar fica no Yahoo, no mesmo lote dos outros cards. A cotação
+  // internacional parou perto de R$ 5,02; o par que a página já publica está
+  // na casa de R$ 5,60, junto do mini dólar da faixa.
   if (!_fixosBuscando) {
-    // O Yahoo do dólar ficou parado na cotação das 9h. Ele não entra neste lote,
-    // para não apagar o preço que acabou de chegar da cotação internacional.
-    const fixos = SIMBOLOS_COTACOES.filter((s) => _interesseAoVivo.has(s) && s !== 'USDBRL=X');
+    const fixos = SIMBOLOS_COTACOES.filter((s) => _interesseAoVivo.has(s));
     _fixosBuscando = true;
     buscarLoteAoVivo(fixos, () => { _fixosBuscando = false; });
   }
@@ -1633,7 +1640,7 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Agente Trader na porta ${PORT} · modelo ${MODEL} · effort ${EFFORT} · ${CODIGOS_TRADER.length} códigos`);
     if (!client) console.warn('ANTHROPIC_API_KEY ausente: o site abre, mas o chat responde 503.');
-    if (!FINNHUB_KEY) console.warn('FINNHUB_API_KEY ausente: /api/eua/cotacoes e /api/eua/noticias respondem 503, e o dólar do monitor fica no Yahoo.');
+    if (!FINNHUB_KEY) console.warn('FINNHUB_API_KEY ausente: /api/eua/cotacoes e /api/eua/noticias respondem 503.');
     if (!FRED_KEY) console.warn('FRED_API_KEY ausente: /api/eua/indicadores responde 503.');
     if (!BRAPI_KEY) console.warn('BRAPI_API_KEY ausente: /api/br/cotacoes responde 503.');
     if (!EXA_KEY) console.warn('EXA_API_KEY ausente: /api/br/noticias responde 503.');

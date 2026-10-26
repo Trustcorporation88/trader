@@ -267,9 +267,9 @@ button.card-mercado:hover{border-color:var(--laranja)}
 
 <main>
   <section class="cartao" id="painel">
-    <h2><span class="etiqueta">Mercados</span> Ibovespa, câmbio, Bitcoin, Brent e Nova York <span class="extra" id="painelHora"></span></h2>
+    <h2><span class="etiqueta">Mercados</span> Ibovespa futuro, câmbio, Bitcoin, Brent e Nova York <span class="extra" id="painelHora"></span></h2>
     <div class="painel" id="painelCards"><span class="carregando">Carregando índices…</span></div>
-    <p class="nota">Preço ao vivo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto. O Real/Dólar sai da cotação internacional ao vivo, a cada 2 segundos; o restante dos cards vem do Yahoo Finance a cada segundo. Na faixa, Ibovespa futuro e dólar futuro são o contrato contínuo da B3, com cerca de 15 minutos de atraso. A bolsa pode publicar com atraso e isto não gasta crédito da Fincept. O desenho é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais, Bitcoin e Brent em dólar. Não é recomendação de compra ou venda.</p>
+    <p class="nota">Preço ao vivo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto. O primeiro card é o mini Ibovespa (contrato contínuo), não o índice à vista, e chega com cerca de 15 minutos de atraso. O índice à vista continua na faixa, como IBOV. Real/Dólar, Bitcoin, Brent, S&P 500 e Dow Jones vêm do Yahoo Finance a cada segundo. O mini dólar da faixa também tem cerca de 15 minutos de atraso. A bolsa pode publicar com atraso e isto não gasta crédito da Fincept. O desenho dos outros cards é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais, Bitcoin e Brent em dólar. Não é recomendação de compra ou venda.</p>
   </section>
 
   <div class="grade-principal">
@@ -546,7 +546,7 @@ function sparkline(pontos, alta){
 }
 function htmlCardMercado(c){
   const alta = c.variacao == null || c.variacao >= 0;
-  const preco = c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco);
+  const preco = c.symbol === 'WIN1!' ? fmtFaixaPreco(c, c.preco) : (c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco));
   return `<button type="button" class="card-mercado" data-s="${esc(c.symbol)}">
     <div class="rotulo">${esc(c.nome)}</div>
     <div class="preco">${preco}</div>
@@ -578,7 +578,7 @@ function renderPainel(itens, aoVivo){
     itens.forEach((c, i) => {
       const b = botoes[i];
       const alta = c.variacao == null || c.variacao >= 0;
-      b.querySelector('.preco').textContent = c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco);
+      b.querySelector('.preco').textContent = c.symbol === 'WIN1!' ? fmtFaixaPreco(c, c.preco) : (c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco));
       const delta = b.querySelector('.delta');
       delta.className = 'delta ' + classeVar(c.variacao);
       delta.textContent = `${fmtVar(c.variacao)} · ${fmtDeltaPontos(c.variacaoPontos, c.tipo)}`;
@@ -691,8 +691,32 @@ function selecionar(simbolo){
   atualizarAbaAtivo();
   $('simSimbolo').value = foco;
 }
+function ehContratoB3(simbolo){ return simbolo === 'WIN1!' || simbolo === 'WDO1!'; }
+function mostrarContratoB3(){
+  const q = cotacoes[foco] || {};
+  const nome = foco === 'WIN1!' ? 'Ibov futuro' : 'Dólar futuro';
+  historicoAtual = { symbol: foco, nome, preco: q.preco, moeda: null, pontos: [], bolsa: 'B3', contrato: true };
+  const naLista = watchlist.includes(foco);
+  $('ativoCab').innerHTML = `
+    <div><div class="nome">${esc(nome)}</div><div class="sub mono">${esc(foco)} · B3 · contrato contínuo, cerca de 15 min de atraso</div></div>
+    <div><div class="preco" id="ativoPreco">${fmtFaixaPreco({ symbol: foco }, q.preco)}</div></div>
+    <div class="var ${classeVar(q.variacao)}" id="ativoVar">${fmtVar(q.variacao)} <span class="sub">no dia</span></div>
+    <div class="acoes">
+      <button type="button" id="btWl">${naLista ? '★ Na watchlist' : '☆ Adicionar à watchlist'}</button>
+      <button type="button" class="primario" id="btAlerta">Criar alerta</button>
+    </div>`;
+  $('btWl').onclick = () => { naLista ? removerWl(foco) : adicionarWl(foco); mostrarContratoB3(); };
+  $('btAlerta').onclick = () => {
+    $('alSimbolo').value = foco; $('alAlvo').value = '';
+    $('alertas').scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => $('alAlvo').focus(), 300);
+  };
+  $('estatisticas').innerHTML = '';
+  if (modoGrafico !== 'tv') { modoGrafico = 'tv'; gravar(CHAVE_MODO, modoGrafico); }
+  aplicarModoGrafico();
+}
 async function carregarHistorico(){
   const seq = ++histSeq;
+  if (ehContratoB3(foco)) { mostrarContratoB3(); return; }
   $('ativoCab').innerHTML = `<span class="carregando">Carregando ${esc(foco)}…</span>`;
   $('estatisticas').innerHTML = '';
   desenharGrafico(null);
@@ -888,6 +912,17 @@ function simbolosAoVivo(){
 function pintarPrecoFoco(preco){
   if (!historicoAtual || preco == null || !isFinite(preco)) return;
   if (String(historicoAtual.symbol || '').toUpperCase() !== String(foco || '').toUpperCase()) return;
+  if (historicoAtual.contrato) {
+    historicoAtual.preco = preco;
+    const el = $('ativoPreco');
+    if (el) el.textContent = fmtFaixaPreco({ symbol: foco }, preco);
+    const q = cotacoes[foco] || {};
+    const v = $('ativoVar');
+    if (!v) return;
+    v.className = 'var ' + classeVar(q.variacao);
+    v.innerHTML = `${fmtVar(q.variacao)} <span class="sub">no dia</span>`;
+    return;
+  }
   historicoAtual.preco = preco;
   const el = $('ativoPreco');
   if (el) el.textContent = fmtPreco(preco, historicoAtual.moeda);
@@ -1078,7 +1113,7 @@ function carregarWidgets(){
 
 // ---------- Gráfico do TradingView para o ativo em foco ----------
 function simboloTV(s){
-  const fixos = { '^BVSP': 'BMFBOVESPA:IBOV', '^GSPC': 'SP:SPX', '^DJI': 'DJ:DJI', '^IXIC': 'NASDAQ:IXIC' };
+  const fixos = { '^BVSP': 'BMFBOVESPA:IBOV', 'WIN1!': 'BMFBOVESPA:WIN1!', 'WDO1!': 'BMFBOVESPA:WDO1!', '^GSPC': 'SP:SPX', '^DJI': 'DJ:DJI', '^IXIC': 'NASDAQ:IXIC' };
   if (fixos[s]) return fixos[s];
   let m;
   if ((m = s.match(/^([A-Z0-9]+)\.SA$/))) return 'BMFBOVESPA:' + m[1];
@@ -1103,7 +1138,9 @@ function aplicarModoGrafico(){
   $('periodos').style.visibility = tv ? 'hidden' : '';
   $('grafico').hidden = tv;
   $('graficoTV').hidden = !tv;
-  if (tv) renderTV(); else desenharGrafico(historicoAtual, 'Sem dados para o gráfico.');
+  if (tv) renderTV();
+  else if (historicoAtual && historicoAtual.contrato) desenharGrafico(null, 'O gráfico simples não cobre este contrato. Use TradingView.');
+  else desenharGrafico(historicoAtual, 'Sem dados para o gráfico.');
 }
 $('modoGrafico').addEventListener('click', (ev) => {
   const b = ev.target.closest('button[data-m]');
