@@ -495,7 +495,6 @@ const fmt = (v, simbolo) => {
   if(v == null) return '—';
   if(simbolo === 'USDBRL=X') return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
   if(simbolo === 'BTC-USD') return 'US$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits:0, maximumFractionDigits:0 });
-  if(simbolo === 'WIN1!') return v.toLocaleString('pt-BR', { maximumFractionDigits:0 });
   if(simbolo === 'WDO1!') return v.toLocaleString('pt-BR', { minimumFractionDigits:1, maximumFractionDigits:1 });
   return v.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
 };
