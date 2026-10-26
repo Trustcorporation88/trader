@@ -949,6 +949,25 @@ function filtrarSimbolosAoVivo(texto, max) {
   return saida;
 }
 
+/**
+ * Cotação do par OANDA:USD_BRL na Finnhub -> o mesmo formato da cotação do Yahoo.
+ * O símbolo interno continua USDBRL=X para a faixa, o card e a watchlist não mudarem de identidade.
+ * c === 0 é o "sem dado" da Finnhub, não um câmbio de verdade.
+ */
+function cotacaoDolarFinnhub(j) {
+  const preco = j && Number(j.c);
+  if (!isFinite(preco) || preco <= 0) return null;
+  const variacao = j.dp == null ? null : Number(j.dp);
+  return {
+    symbol: 'USDBRL=X',
+    shortName: 'USD/BRL',
+    regularMarketPrice: preco,
+    regularMarketChangePercent: isFinite(variacao) ? variacao : null,
+    moeda: 'BRL',
+    fonte: 'Finnhub',
+  };
+}
+
 /** Cotação de 1 dia do Yahoo -> preço e variação do card. Sem desenho: o de 6 meses fica no /painel. */
 function cotacaoParaCard(def, cotacao) {
   const preco = cotacao && cotacao.regularMarketPrice;
@@ -980,6 +999,13 @@ let _ultimoPedidoPainel = 0;
 let _painelTimer = null;
 let _painelErroEm = 0;
 let _cursorExtra = 0;
+// A Finnhub gratuita cabe em 60 chamadas por minuto, e o painel EUA divide a mesma chave.
+// 2 segundos dá 30/min para o dólar e sobra folga para ação e notícia.
+const DOLAR_FINNHUB_MS = 2_000;
+const DOLAR_FINNHUB_SIMBOLO = 'OANDA:USD_BRL';
+let _dolarFinnhubBuscando = false;
+let _dolarFinnhubProxima = 0;
+let _dolarFinnhubErroEm = 0;
 
 function registrarInteresseAoVivo(extras) {
   const agora = Date.now();
@@ -999,7 +1025,9 @@ function guardarCotacoesAoVivo(lista) {
     const q = _quotesAoVivo.get(def.symbol);
     return (q && cotacaoParaCard(def, q)) || anteriores.get(def.symbol) || null;
   }).filter(Boolean);
-  if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte: 'Yahoo Finance' };
+  const dolar = _quotesAoVivo.get('USDBRL=X');
+  const fonte = dolar && dolar.fonte === 'Finnhub' ? 'Yahoo Finance; dólar pela Finnhub' : 'Yahoo Finance';
+  if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte };
 }
 
 function cotacoesPublicas(simbolos) {
@@ -1034,6 +1062,33 @@ async function buscarLoteAoVivo(simbolos, marcar) {
   }
 }
 
+function atualizarDolarFinnhub() {
+  const agora = Date.now();
+  if (_dolarFinnhubBuscando || agora < _dolarFinnhubProxima) return;
+  _dolarFinnhubBuscando = true;
+  _dolarFinnhubProxima = agora + DOLAR_FINNHUB_MS;
+  const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(DOLAR_FINNHUB_SIMBOLO)}&token=${encodeURIComponent(FINNHUB_KEY)}`;
+  fetchJson(url, { timeout: 8000 }).then((j) => {
+    const q = cotacaoDolarFinnhub(j);
+    if (!q) throw new Error('cotação do dólar vazia');
+    _dolarFinnhubProxima = Date.now() + DOLAR_FINNHUB_MS;
+    guardarCotacoesAoVivo([q]);
+  }).catch((e) => {
+    _dolarFinnhubProxima = Date.now() + (/429/.test(e.message) ? 30_000 : DOLAR_FINNHUB_MS);
+    const atual = _quotesAoVivo.get('USDBRL=X');
+    if (!atual || atual.fonte !== 'Finnhub') {
+      fetchCotacao('USDBRL=X').then((q) => {
+        const agoraCot = _quotesAoVivo.get('USDBRL=X');
+        if (!agoraCot || agoraCot.fonte !== 'Finnhub') guardarCotacoesAoVivo([q]);
+      }).catch(() => {});
+    }
+    if (Date.now() - _dolarFinnhubErroEm > 60_000) {
+      _dolarFinnhubErroEm = Date.now();
+      log('erro', 'dólar Finnhub:', e.message);
+    }
+  }).finally(() => { _dolarFinnhubBuscando = false; });
+}
+
 function cicloPainelAoVivo() {
   if (Date.now() - _ultimoPedidoPainel > 6_000 || !_interesseAoVivo.size) {
     if (_painelTimer) { clearInterval(_painelTimer); _painelTimer = null; }
@@ -1041,8 +1096,11 @@ function cicloPainelAoVivo() {
     return;
   }
   const todos = [..._interesseAoVivo.keys()];
+  if (FINNHUB_KEY && _interesseAoVivo.has('USDBRL=X')) atualizarDolarFinnhub();
   if (!_fixosBuscando) {
-    const fixos = SIMBOLOS_COTACOES.filter((s) => _interesseAoVivo.has(s));
+    // Com a chave, o dólar não entra no lote do Yahoo: senão o preço atrasado da bolsa
+    // de câmbio do Yahoo pisa na cotação que acabou de chegar da Finnhub.
+    const fixos = SIMBOLOS_COTACOES.filter((s) => _interesseAoVivo.has(s) && !(FINNHUB_KEY && s === 'USDBRL=X'));
     _fixosBuscando = true;
     buscarLoteAoVivo(fixos, () => { _fixosBuscando = false; });
   }
@@ -1500,7 +1558,7 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Agente Trader na porta ${PORT} · modelo ${MODEL} · effort ${EFFORT} · ${CODIGOS_TRADER.length} códigos`);
     if (!client) console.warn('ANTHROPIC_API_KEY ausente: o site abre, mas o chat responde 503.');
-    if (!FINNHUB_KEY) console.warn('FINNHUB_API_KEY ausente: /api/eua/cotacoes e /api/eua/noticias respondem 503.');
+    if (!FINNHUB_KEY) console.warn('FINNHUB_API_KEY ausente: /api/eua/cotacoes e /api/eua/noticias respondem 503, e o dólar do monitor fica no Yahoo.');
     if (!FRED_KEY) console.warn('FRED_API_KEY ausente: /api/eua/indicadores responde 503.');
     if (!BRAPI_KEY) console.warn('BRAPI_API_KEY ausente: /api/br/cotacoes responde 503.');
     if (!EXA_KEY) console.warn('EXA_API_KEY ausente: /api/br/noticias responde 503.');
@@ -1515,4 +1573,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, proximoLoteAoVivo, filtrarSimbolosAoVivo };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, proximoLoteAoVivo, filtrarSimbolosAoVivo };
