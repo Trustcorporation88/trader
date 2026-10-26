@@ -1146,8 +1146,8 @@ const DOLAR_FINNHUB_MS = 2_000;
 let _dolarFinnhubBuscando = false;
 let _dolarFinnhubProxima = 0;
 let _dolarFinnhubErroEm = 0;
-// O futuro da B3 nessa fonte chega com cerca de 15 min de atraso. 2 s acompanha o pregão sem martelar o serviço.
-const FUTUROS_B3_MS = 2_000;
+// Cotação pública da B3, no mesmo segundo dos outros cards. Sem chave.
+const FUTUROS_B3_MS = 1_000;
 let _futurosBuscando = false;
 let _futurosProxima = 0;
 let _futurosErroEm = 0;
@@ -1192,6 +1192,44 @@ function cotacaoFuturoB3(def, linha) {
   };
 }
 
+const MESES_CONTRATO = { F: 1, G: 2, H: 3, J: 4, K: 5, M: 6, N: 7, Q: 8, U: 9, V: 10, X: 11, Z: 12 };
+
+/**
+ * Da lista de vencimentos da B3, o contrato em pregão é o de vencimento mais próximo
+ * que tem negócio. Opções (código longo) ficam de fora.
+ */
+function contratoEmPregao(lista, prefixo) {
+  const re = new RegExp('^' + prefixo + '[FGHJKMNQUVXZ]\\d{2}$');
+  const candidatos = [];
+  for (const item of lista || []) {
+    const simb = item && item.symb;
+    if (!re.test(simb || '')) continue;
+    const q = item.SctyQtn || {};
+    const preco = Number(q.curPrc);
+    if (!isFinite(preco) || preco <= 0) continue;
+    const mes = MESES_CONTRATO[simb.charAt(prefixo.length)];
+    const ano = 2000 + Number(simb.slice(-2));
+    candidatos.push({ symb: simb, preco, change: q.prcFlcn, ordem: ano * 12 + mes });
+  }
+  candidatos.sort((a, b) => a.ordem - b.ordem);
+  return candidatos[0] || null;
+}
+
+/** Preço do pregão na B3. Não carrega o atraso de 15 minutos da outra fonte. */
+function cotacaoPregaoB3(def, linha) {
+  const preco = linha && Number(linha.close);
+  if (!def || !isFinite(preco) || preco <= 0) return null;
+  const variacao = linha.change == null ? null : Number(linha.change);
+  return {
+    symbol: def.symbol,
+    shortName: def.nome,
+    regularMarketPrice: preco,
+    regularMarketChangePercent: isFinite(variacao) ? variacao : null,
+    moeda: null,
+    fonte: 'B3',
+  };
+}
+
 function cotacoesPublicas(simbolos) {
   const lista = [];
   const vistos = new Set();
@@ -1207,6 +1245,7 @@ function cotacoesPublicas(simbolos) {
       variacao: q.regularMarketChangePercent,
       moeda: q.moeda || null,
       atrasoMin: q.atrasoMin || null,
+      fonte: q.fonte || null,
     });
   }
   return lista;
@@ -1274,23 +1313,43 @@ function atualizarDolarAoVivo() {
   }).finally(() => { _dolarFinnhubBuscando = false; });
 }
 
+const PREFIXO_FUTURO_B3 = { 'WIN1!': 'WIN', 'WDO1!': 'WDO' };
+let _contratoB3 = new Map();
+
+function resolverContratosB3() {
+  const agora = Date.now();
+  const faltam = FUTUROS_B3.filter((f) => {
+    const c = _contratoB3.get(f.symbol);
+    return !c || c.ate < agora;
+  });
+  if (!faltam.length) return Promise.resolve();
+  return Promise.all(faltam.map((def) => {
+    const prefixo = PREFIXO_FUTURO_B3[def.symbol];
+    return fetchJson('https://cotacao.b3.com.br/mds/api/v1/DerivativeQuotation/' + prefixo).then((j) => {
+      const escolhido = contratoEmPregao(j && j.Scty, prefixo);
+      if (!escolhido) throw new Error('sem contrato em pregão ' + prefixo);
+      _contratoB3.set(def.symbol, { b3: escolhido.symb, ate: Date.now() + 600_000 });
+    });
+  }));
+}
+
 function atualizarFuturosB3() {
   const agora = Date.now();
   if (_futurosBuscando || agora < _futurosProxima) return;
   _futurosBuscando = true;
   _futurosProxima = agora + FUTUROS_B3_MS;
-  const colunas = ['close', 'change'];
-  postJson('https://scanner.tradingview.com/futures/scan', {
-    symbols: { tickers: FUTUROS_B3.map((f) => f.tv), query: { types: [] } },
-    columns: colunas,
-  }, {
-    timeout: 8000,
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-  }).then((j) => {
-    const porTv = new Map((j.data || []).map((row) => [row.s, { close: row.d && row.d[0], change: row.d && row.d[1] }]));
-    const lista = FUTUROS_B3.map((def) => cotacaoFuturoB3(def, porTv.get(def.tv))).filter(Boolean);
-    if (lista.length) guardarCotacoesAoVivo(lista);
-    else throw new Error('futuros da B3 sem preço');
+  resolverContratosB3().then(() => Promise.all(FUTUROS_B3.map((def) => {
+    const c = _contratoB3.get(def.symbol);
+    if (!c) return null;
+    return fetchJson('https://cotacao.b3.com.br/mds/api/v1/InstrumentQuotation/' + encodeURIComponent(c.b3)).then((j) => {
+      const q = j && j.Trad && j.Trad[0] && j.Trad[0].scty && j.Trad[0].scty.SctyQtn;
+      if (!q || !(Number(q.curPrc) > 0)) { _contratoB3.delete(def.symbol); return null; }
+      return cotacaoPregaoB3(def, { close: q.curPrc, change: q.prcFlcn });
+    });
+  }))).then((lista) => {
+    const ok = (lista || []).filter(Boolean);
+    if (!ok.length) throw new Error('futuros da B3 sem preço');
+    guardarCotacoesAoVivo(ok);
   }).catch((e) => {
     _futurosProxima = Date.now() + FUTUROS_B3_MS;
     if (Date.now() - _futurosErroEm > 60_000) {
@@ -1785,4 +1844,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, fechamentosDasBarras, proximoLoteAoVivo, filtrarSimbolosAoVivo };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, cotacaoPregaoB3, contratoEmPregao, fechamentosDasBarras, proximoLoteAoVivo, filtrarSimbolosAoVivo };

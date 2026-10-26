@@ -305,7 +305,7 @@ console.log('6. busca na web e erros OK');
   console.log('9. fronteira, simulador de ordens e dados globais OK');
 
   // 10. Cards do painel de mercados
-  const { montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, fechamentosDasBarras, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
+  const { montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, cotacaoPregaoB3, contratoEmPregao, fechamentosDasBarras, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
   const card = montarCardMercado({ symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' }, {
     preco: 178000, anterior: 100000, moeda: 'BRL',
     pontos: [...Array.from({ length: 98 }, (_, i) => [i, 100 + i]), [98, 177000], [99, 178000]],
@@ -373,6 +373,23 @@ console.log('6. busca na web e erros OK');
   assert.strictEqual(win.moeda, null, 'futuro de índice sai em pontos');
   const wdo = cotacaoFuturoB3({ symbol: 'WDO1!', nome: 'Dólar fut.' }, { close: 5610.5, change: 1.2 });
   assert.strictEqual(wdo.regularMarketPrice, 5610.5);
+  const pregao = cotacaoPregaoB3({ symbol: 'WIN1!', nome: 'Ibov fut.' }, { close: 174280, change: -16.46 });
+  assert.strictEqual(pregao.fonte, 'B3');
+  assert.strictEqual(pregao.regularMarketPrice, 174280);
+  assert.strictEqual(pregao.atrasoMin, undefined, 'a cotação da B3 não marca atraso de 15 minutos');
+  assert.strictEqual(cotacaoPregaoB3({ symbol: 'WIN1!', nome: 'Ibov fut.' }, { close: 0 }), null);
+  const winPregao = contratoEmPregao([
+    { symb: 'WING27', SctyQtn: { curPrc: 178060, prcFlcn: -16 } },
+    { symb: 'WINZ26', SctyQtn: { curPrc: 174280, prcFlcn: -16.46 } },
+    { symb: 'WINJ27', SctyQtn: { curPrc: 0 } },
+    { symb: 'WINZ26C123', SctyQtn: { curPrc: 1 } },
+  ], 'WIN');
+  assert.strictEqual(winPregao.symb, 'WINZ26');
+  assert.strictEqual(contratoEmPregao([
+    { symb: 'WDOZ26', SctyQtn: { curPrc: 5572.5, prcFlcn: 10 } },
+    { symb: 'WDOX26', SctyQtn: { curPrc: 5544, prcFlcn: 10.7 } },
+    { symb: 'WDOX26C005950E', SctyQtn: { curPrc: 10 } },
+  ], 'WDO').symb, 'WDOX26');
   assert.strictEqual(cotacaoFuturoB3({ symbol: 'WIN1!', nome: 'Ibov fut.' }, { close: 0, change: 1 }), null);
   assert.strictEqual(cotacaoFuturoB3(null, { close: 10 }), null);
   assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: null }), null);
