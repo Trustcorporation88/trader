@@ -309,6 +309,12 @@ app.post('/api/chat', limitar, exigirSenha, async (req, res) => {
 // ---------- Cotações (proxy Yahoo Finance — evita CORS no navegador) ----------
 const https = require('https');
 const SIMBOLOS_COTACOES = ['^BVSP', 'USDBRL=X', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
+// Faixa da página principal: o índice e o dólar à vista, e ao lado o futuro de cada um.
+const ORDEM_FAIXA = ['^BVSP', 'WIN1!', 'USDBRL=X', 'WDO1!', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
+const FUTUROS_B3 = [
+  { symbol: 'WIN1!', nome: 'Ibov fut.', tv: 'BMFBOVESPA:WIN1!' },
+  { symbol: 'WDO1!', nome: 'Dólar fut.', tv: 'BMFBOVESPA:WDO1!' },
+];
 
 // Cache em memória para não bater na API a cada requisição
 let _cotCache = null;
@@ -999,13 +1005,16 @@ let _ultimoPedidoPainel = 0;
 let _painelTimer = null;
 let _painelErroEm = 0;
 let _cursorExtra = 0;
-// A Finnhub gratuita cabe em 60 chamadas por minuto, e o painel EUA divide a mesma chave.
-// 2 segundos dá 30/min para o dólar e sobra folga para ação e notícia.
+// Cotação internacional do dólar, a cada 2 segundos, enquanto a página está aberta.
 const DOLAR_FINNHUB_MS = 2_000;
-const DOLAR_FINNHUB_SIMBOLO = 'OANDA:USD_BRL';
 let _dolarFinnhubBuscando = false;
 let _dolarFinnhubProxima = 0;
 let _dolarFinnhubErroEm = 0;
+// O futuro da B3 nessa fonte chega com cerca de 15 min de atraso; 5 s basta e não martela o serviço.
+const FUTUROS_B3_MS = 5_000;
+let _futurosBuscando = false;
+let _futurosProxima = 0;
+let _futurosErroEm = 0;
 
 function registrarInteresseAoVivo(extras) {
   const agora = Date.now();
@@ -1026,14 +1035,33 @@ function guardarCotacoesAoVivo(lista) {
     return (q && cotacaoParaCard(def, q)) || anteriores.get(def.symbol) || null;
   }).filter(Boolean);
   const dolar = _quotesAoVivo.get('USDBRL=X');
-  const fonte = dolar && dolar.fonte === 'Finnhub' ? 'Yahoo Finance; dólar pela Finnhub' : 'Yahoo Finance';
+  const fonte = dolar && dolar.fonte === 'TradingView' ? 'Yahoo Finance; dólar ao vivo' : 'Yahoo Finance';
   if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte };
+}
+
+/**
+ * Linha do scanner de futuros -> cotação da faixa. O preço já vem na escala do pregão
+ * (WIN em pontos do índice, WDO em pontos do dólar). change é a variação percentual do dia.
+ */
+function cotacaoFuturoB3(def, linha) {
+  const preco = linha && Number(linha.close);
+  if (!def || !isFinite(preco) || preco <= 0) return null;
+  const variacao = linha.change == null ? null : Number(linha.change);
+  return {
+    symbol: def.symbol,
+    shortName: def.nome,
+    regularMarketPrice: preco,
+    regularMarketChangePercent: isFinite(variacao) ? variacao : null,
+    moeda: null,
+    fonte: 'TradingView',
+    atrasoMin: 15,
+  };
 }
 
 function cotacoesPublicas(simbolos) {
   const lista = [];
   const vistos = new Set();
-  for (const s of [...SIMBOLOS_COTACOES, ...simbolos]) {
+  for (const s of [...ORDEM_FAIXA, ...simbolos]) {
     if (vistos.has(s)) continue;
     vistos.add(s);
     const q = _quotesAoVivo.get(s);
@@ -1044,6 +1072,7 @@ function cotacoesPublicas(simbolos) {
       preco: q.regularMarketPrice,
       variacao: q.regularMarketChangePercent,
       moeda: q.moeda || null,
+      atrasoMin: q.atrasoMin || null,
     });
   }
   return lista;
@@ -1062,31 +1091,76 @@ async function buscarLoteAoVivo(simbolos, marcar) {
   }
 }
 
-function atualizarDolarFinnhub() {
+/** Cotação internacional do USD/BRL que está andando agora. A Finnhub não devolveu esse par na chave do site. */
+function cotacaoDolarStreaming(linha) {
+  const preco = linha && Number(linha.close);
+  if (!isFinite(preco) || preco < 3 || preco > 8) return null;
+  const variacao = linha.change == null ? null : Number(linha.change);
+  return {
+    symbol: 'USDBRL=X',
+    shortName: 'USD/BRL',
+    regularMarketPrice: preco,
+    regularMarketChangePercent: isFinite(variacao) ? variacao : null,
+    moeda: 'BRL',
+    fonte: 'TradingView',
+  };
+}
+
+function atualizarDolarAoVivo() {
   const agora = Date.now();
   if (_dolarFinnhubBuscando || agora < _dolarFinnhubProxima) return;
   _dolarFinnhubBuscando = true;
   _dolarFinnhubProxima = agora + DOLAR_FINNHUB_MS;
-  const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(DOLAR_FINNHUB_SIMBOLO)}&token=${encodeURIComponent(FINNHUB_KEY)}`;
-  fetchJson(url, { timeout: 8000 }).then((j) => {
-    const q = cotacaoDolarFinnhub(j);
-    if (!q) throw new Error('cotação do dólar vazia');
+  const colunas = ['close', 'change'];
+  postJson('https://scanner.tradingview.com/forex/scan', {
+    symbols: { tickers: ['PEPPERSTONE:USDBRL'], query: { types: [] } },
+    columns: colunas,
+  }, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0' } }).then((j) => {
+    const row = (j.data || [])[0];
+    const q = cotacaoDolarStreaming(row && { close: row.d && row.d[0], change: row.d && row.d[1] });
+    if (!q) throw new Error('dólar ao vivo sem preço');
     _dolarFinnhubProxima = Date.now() + DOLAR_FINNHUB_MS;
     guardarCotacoesAoVivo([q]);
   }).catch((e) => {
-    _dolarFinnhubProxima = Date.now() + (/429/.test(e.message) ? 30_000 : DOLAR_FINNHUB_MS);
+    _dolarFinnhubProxima = Date.now() + DOLAR_FINNHUB_MS;
     const atual = _quotesAoVivo.get('USDBRL=X');
-    if (!atual || atual.fonte !== 'Finnhub') {
+    if (!atual || atual.fonte !== 'TradingView') {
       fetchCotacao('USDBRL=X').then((q) => {
         const agoraCot = _quotesAoVivo.get('USDBRL=X');
-        if (!agoraCot || agoraCot.fonte !== 'Finnhub') guardarCotacoesAoVivo([q]);
+        if (!agoraCot || agoraCot.fonte !== 'TradingView') guardarCotacoesAoVivo([q]);
       }).catch(() => {});
     }
     if (Date.now() - _dolarFinnhubErroEm > 60_000) {
       _dolarFinnhubErroEm = Date.now();
-      log('erro', 'dólar Finnhub:', e.message);
+      log('erro', 'dólar ao vivo:', e.message);
     }
   }).finally(() => { _dolarFinnhubBuscando = false; });
+}
+
+function atualizarFuturosB3() {
+  const agora = Date.now();
+  if (_futurosBuscando || agora < _futurosProxima) return;
+  _futurosBuscando = true;
+  _futurosProxima = agora + FUTUROS_B3_MS;
+  const colunas = ['close', 'change'];
+  postJson('https://scanner.tradingview.com/futures/scan', {
+    symbols: { tickers: FUTUROS_B3.map((f) => f.tv), query: { types: [] } },
+    columns: colunas,
+  }, {
+    timeout: 8000,
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+  }).then((j) => {
+    const porTv = new Map((j.data || []).map((row) => [row.s, { close: row.d && row.d[0], change: row.d && row.d[1] }]));
+    const lista = FUTUROS_B3.map((def) => cotacaoFuturoB3(def, porTv.get(def.tv))).filter(Boolean);
+    if (lista.length) guardarCotacoesAoVivo(lista);
+    else throw new Error('futuros da B3 sem preço');
+  }).catch((e) => {
+    _futurosProxima = Date.now() + FUTUROS_B3_MS;
+    if (Date.now() - _futurosErroEm > 60_000) {
+      _futurosErroEm = Date.now();
+      log('erro', 'futuros B3:', e.message);
+    }
+  }).finally(() => { _futurosBuscando = false; });
 }
 
 function cicloPainelAoVivo() {
@@ -1096,11 +1170,12 @@ function cicloPainelAoVivo() {
     return;
   }
   const todos = [..._interesseAoVivo.keys()];
-  if (FINNHUB_KEY && _interesseAoVivo.has('USDBRL=X')) atualizarDolarFinnhub();
+  atualizarFuturosB3();
+  if (_interesseAoVivo.has('USDBRL=X')) atualizarDolarAoVivo();
   if (!_fixosBuscando) {
-    // Com a chave, o dólar não entra no lote do Yahoo: senão o preço atrasado da bolsa
-    // de câmbio do Yahoo pisa na cotação que acabou de chegar da Finnhub.
-    const fixos = SIMBOLOS_COTACOES.filter((s) => _interesseAoVivo.has(s) && !(FINNHUB_KEY && s === 'USDBRL=X'));
+    // O Yahoo do dólar ficou parado na cotação das 9h. Ele não entra neste lote,
+    // para não apagar o preço que acabou de chegar da cotação internacional.
+    const fixos = SIMBOLOS_COTACOES.filter((s) => _interesseAoVivo.has(s) && s !== 'USDBRL=X');
     _fixosBuscando = true;
     buscarLoteAoVivo(fixos, () => { _fixosBuscando = false; });
   }
@@ -1573,4 +1648,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, proximoLoteAoVivo, filtrarSimbolosAoVivo };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, proximoLoteAoVivo, filtrarSimbolosAoVivo };

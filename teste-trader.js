@@ -305,7 +305,7 @@ console.log('6. busca na web e erros OK');
   console.log('9. fronteira, simulador de ordens e dados globais OK');
 
   // 10. Cards do painel de mercados
-  const { montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
+  const { montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
   const card = montarCardMercado({ symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' }, {
     preco: 178000, anterior: 100000, moeda: 'BRL',
     pontos: [...Array.from({ length: 98 }, (_, i) => [i, 100 + i]), [98, 177000], [99, 178000]],
@@ -347,6 +347,24 @@ console.log('6. busca na web e erros OK');
   assert.strictEqual(cotacaoDolarFinnhub({ c: 0, dp: 1 }), null, 'zero é ausência de dado na Finnhub');
   assert.strictEqual(cotacaoDolarFinnhub(null), null);
   assert.strictEqual(cotacaoDolarFinnhub({ c: 5.1 }).regularMarketChangePercent, null);
+  const dolarVivo = cotacaoDolarStreaming({ close: 5.02019, change: -1.05 });
+  assert.strictEqual(dolarVivo.symbol, 'USDBRL=X');
+  assert.strictEqual(dolarVivo.regularMarketPrice, 5.02019);
+  assert.strictEqual(dolarVivo.moeda, 'BRL');
+  assert.strictEqual(dolarVivo.fonte, 'TradingView');
+  assert.strictEqual(cotacaoDolarStreaming({ close: 12, change: 1 }), null, 'fora da faixa do dólar/real');
+  assert.strictEqual(cotacaoDolarStreaming({ close: 0 }), null);
+  const win = cotacaoFuturoB3({ symbol: 'WIN1!', nome: 'Ibov fut.' }, { close: 169465, change: -18.72 });
+  assert.strictEqual(win.symbol, 'WIN1!');
+  assert.strictEqual(win.shortName, 'Ibov fut.');
+  assert.strictEqual(win.regularMarketPrice, 169465);
+  assert.strictEqual(win.regularMarketChangePercent, -18.72);
+  assert.strictEqual(win.atrasoMin, 15);
+  assert.strictEqual(win.moeda, null, 'futuro de índice sai em pontos');
+  const wdo = cotacaoFuturoB3({ symbol: 'WDO1!', nome: 'Dólar fut.' }, { close: 5610.5, change: 1.2 });
+  assert.strictEqual(wdo.regularMarketPrice, 5610.5);
+  assert.strictEqual(cotacaoFuturoB3({ symbol: 'WIN1!', nome: 'Ibov fut.' }, { close: 0, change: 1 }), null);
+  assert.strictEqual(cotacaoFuturoB3(null, { close: 10 }), null);
   assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: null }), null);
   assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: 10, regularMarketChangePercent: -100 }).variacaoPontos, null);
   const fixos = ['^BVSP', 'USDBRL=X'];
