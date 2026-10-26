@@ -305,7 +305,7 @@ console.log('6. busca na web e erros OK');
   console.log('9. fronteira, simulador de ordens e dados globais OK');
 
   // 10. Cards do painel de mercados
-  const { montarCardMercado, cotacaoParaCard, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
+  const { montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
   const card = montarCardMercado({ symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' }, {
     preco: 178000, anterior: 100000, moeda: 'BRL',
     pontos: [...Array.from({ length: 98 }, (_, i) => [i, 100 + i]), [98, 177000], [99, 178000]],
@@ -335,6 +335,18 @@ console.log('6. busca na web e erros OK');
   const brent = cotacaoParaCard({ symbol: 'BZ=F', nome: 'Brent', tipo: 'usd' }, { regularMarketPrice: 101.5, regularMarketChangePercent: 1.2 });
   assert.strictEqual(brent.moeda, 'USD');
   assert.strictEqual(brent.preco, 101.5);
+  const qDolar = cotacaoDolarFinnhub({ c: 5.0123, dp: 0.42, pc: 4.991 });
+  assert.strictEqual(qDolar.symbol, 'USDBRL=X', 'o dólar da Finnhub ocupa o mesmo símbolo da faixa');
+  assert.strictEqual(qDolar.regularMarketPrice, 5.0123);
+  assert.strictEqual(qDolar.regularMarketChangePercent, 0.42);
+  assert.strictEqual(qDolar.moeda, 'BRL');
+  assert.strictEqual(qDolar.fonte, 'Finnhub');
+  const cardDolar = cotacaoParaCard({ symbol: 'USDBRL=X', nome: 'Real/Dólar', tipo: 'cambio' }, qDolar);
+  assert.strictEqual(cardDolar.preco, 5.0123);
+  assert.strictEqual(cardDolar.moeda, 'BRL');
+  assert.strictEqual(cotacaoDolarFinnhub({ c: 0, dp: 1 }), null, 'zero é ausência de dado na Finnhub');
+  assert.strictEqual(cotacaoDolarFinnhub(null), null);
+  assert.strictEqual(cotacaoDolarFinnhub({ c: 5.1 }).regularMarketChangePercent, null);
   assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: null }), null);
   assert.strictEqual(cotacaoParaCard({ symbol: 'X', nome: 'X', tipo: 'indice' }, { regularMarketPrice: 10, regularMarketChangePercent: -100 }).variacaoPontos, null);
   const fixos = ['^BVSP', 'USDBRL=X'];
