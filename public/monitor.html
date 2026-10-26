@@ -269,7 +269,7 @@ button.card-mercado:hover{border-color:var(--laranja)}
   <section class="cartao" id="painel">
     <h2><span class="etiqueta">Mercados</span> Ibovespa futuro, câmbio, Bitcoin, Brent e Nova York <span class="extra" id="painelHora"></span></h2>
     <div class="painel" id="painelCards"><span class="carregando">Carregando índices…</span></div>
-    <p class="nota">Preço ao vivo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto. O primeiro card é o mini Ibovespa (contrato contínuo), não o índice à vista, e chega com cerca de 15 minutos de atraso. O índice à vista continua na faixa, como IBOV. Real/Dólar, Bitcoin, Brent, S&P 500 e Dow Jones vêm do Yahoo Finance a cada segundo. O mini dólar da faixa também tem cerca de 15 minutos de atraso. A bolsa pode publicar com atraso e isto não gasta crédito da Fincept. O desenho dos outros cards é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais, Bitcoin e Brent em dólar. Não é recomendação de compra ou venda.</p>
+    <p class="nota">Preço ao vivo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto. O primeiro card é o mini Ibovespa (contrato contínuo), não o índice à vista, e chega com cerca de 15 minutos de atraso. O índice à vista continua na faixa, como IBOV. Real/Dólar, Bitcoin, Brent, S&P 500 e Dow Jones vêm do Yahoo Finance a cada segundo. O mini dólar da faixa também tem cerca de 15 minutos de atraso. A bolsa pode publicar com atraso e isto não gasta crédito da Fincept. O desenho de cada card é dos últimos 6 meses; o do mini Ibovespa é o do contrato contínuo. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais, Bitcoin e Brent em dólar. Não é recomendação de compra ou venda.</p>
   </section>
 
   <div class="grade-principal">
@@ -487,7 +487,7 @@ const cotacoes = {}; // symbol -> { preco, variacao, moeda, nome, ts }
 // ---------- Faixa de cotações (reaproveita /api/cotacoes) ----------
 const FAIXA_SIMBOLOS = ['^BVSP', 'WIN1!', 'USDBRL=X', 'WDO1!', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
 function fmtFaixaPreco(q, preco){
-  if (q.symbol === 'WIN1!') return preco == null ? '—' : preco.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  if (q.symbol === 'WIN1!') return fmtIndice(preco);
   if (q.symbol === 'WDO1!') return preco == null ? '—' : preco.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   return fmtPreco(preco);
 }
@@ -546,7 +546,7 @@ function sparkline(pontos, alta){
 }
 function htmlCardMercado(c){
   const alta = c.variacao == null || c.variacao >= 0;
-  const preco = c.symbol === 'WIN1!' ? fmtFaixaPreco(c, c.preco) : (c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco));
+  const preco = c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco);
   return `<button type="button" class="card-mercado" data-s="${esc(c.symbol)}">
     <div class="rotulo">${esc(c.nome)}</div>
     <div class="preco">${preco}</div>
@@ -578,7 +578,7 @@ function renderPainel(itens, aoVivo){
     itens.forEach((c, i) => {
       const b = botoes[i];
       const alta = c.variacao == null || c.variacao >= 0;
-      b.querySelector('.preco').textContent = c.symbol === 'WIN1!' ? fmtFaixaPreco(c, c.preco) : (c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco));
+      b.querySelector('.preco').textContent = c.moeda ? fmtPreco(c.preco, c.moeda) : fmtIndice(c.preco);
       const delta = b.querySelector('.delta');
       delta.className = 'delta ' + classeVar(c.variacao);
       delta.textContent = `${fmtVar(c.variacao)} · ${fmtDeltaPontos(c.variacaoPontos, c.tipo)}`;

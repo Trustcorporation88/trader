@@ -305,7 +305,7 @@ console.log('6. busca na web e erros OK');
   console.log('9. fronteira, simulador de ordens e dados globais OK');
 
   // 10. Cards do painel de mercados
-  const { montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
+  const { montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, fechamentosDasBarras, proximoLoteAoVivo, filtrarSimbolosAoVivo } = require('./server');
   const card = montarCardMercado({ symbol: '^BVSP', nome: 'Ibovespa', tipo: 'indice' }, {
     preco: 178000, anterior: 100000, moeda: 'BRL',
     pontos: [...Array.from({ length: 98 }, (_, i) => [i, 100 + i]), [98, 177000], [99, 178000]],
@@ -360,6 +360,12 @@ console.log('6. busca na web e erros OK');
   assert.strictEqual(cardWin.nome, 'Ibov futuro');
   assert.strictEqual(cardWin.preco, 169465);
   assert.strictEqual(cardWin.moeda, null, 'o futuro do índice sai em pontos');
+  assert.deepStrictEqual(fechamentosDasBarras([
+    { v: [20, 1, 2, 1, 180000, 10] },
+    { v: [10, 1, 2, 1, 170000, 10] },
+    { v: [30, 1, 2, 1, 0, 10] },
+    { v: [40] },
+  ]), [170000, 180000], 'o desenho usa os fechamentos diários, em ordem');
   assert.strictEqual(win.shortName, 'Ibov fut.');
   assert.strictEqual(win.regularMarketPrice, 169465);
   assert.strictEqual(win.regularMarketChangePercent, -18.72);

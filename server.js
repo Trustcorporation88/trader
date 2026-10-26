@@ -9,6 +9,7 @@ require('dotenv').config(); // carrega variáveis do arquivo .env (ex.: ANTHROPI
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const WebSocket = require('ws');
 const Anthropic = require('@anthropic-ai/sdk');
 const { AGENTE_TRADER, CODIGOS_TRADER, CATEGORIAS_TRADER, mensagemInvocaTrader } = require('./trader');
 const monitor = require('./monitor');
@@ -886,6 +887,139 @@ function moedaDoCard(def, moedaHistorico) {
   return null;
 }
 
+/**
+ * Barras do gráfico diário (cada uma com v = [tempo, abertura, máxima, mínima, fechamento, volume])
+ * viram a série de fechamentos, em ordem. Fechamento vazio sai fora.
+ */
+function fechamentosDasBarras(barras) {
+  const lista = [];
+  for (const b of barras || []) {
+    const v = b && b.v;
+    const tempo = v && Number(v[0]);
+    const fechamento = v && Number(v[4]);
+    if (!isFinite(tempo) || !isFinite(fechamento) || fechamento <= 0) continue;
+    lista.push([tempo, fechamento]);
+  }
+  lista.sort((a, b) => a[0] - b[0]);
+  return lista.map((p) => p[1]);
+}
+
+function barrasNoPacote(pacote) {
+  const achadas = [];
+  const visitar = (o) => {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) {
+      if (o.length && o[0] && Array.isArray(o[0].v)) achadas.push(o);
+      o.forEach(visitar);
+      return;
+    }
+    Object.values(o).forEach(visitar);
+  };
+  visitar(pacote);
+  return achadas.sort((a, b) => b.length - a.length)[0] || null;
+}
+
+function mensagensDoSocket(raw) {
+  const texto = Buffer.isBuffer(raw) ? raw.toString() : String(raw);
+  const saida = [];
+  let i = 0;
+  while (i < texto.length && texto.startsWith('~m~', i)) {
+    const fim = texto.indexOf('~m~', i + 3);
+    if (fim < 0) break;
+    const tamanho = Number(texto.slice(i + 3, fim));
+    if (!isFinite(tamanho) || tamanho < 0) break;
+    const inicio = fim + 3;
+    saida.push(texto.slice(inicio, inicio + tamanho));
+    i = inicio + tamanho;
+  }
+  return saida;
+}
+
+function pacoteSocket(obj) {
+  const s = JSON.stringify(obj);
+  return `~m~${s.length}~m~${s}`;
+}
+
+/** Fechamentos diários do mini índice contínuo. O Yahoo não tem esse contrato. */
+function buscarFechamentosMiniIndice() {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket('wss://data.tradingview.com/socket.io/websocket?from=chart', {
+      headers: { Origin: 'https://br.tradingview.com', 'User-Agent': 'Mozilla/5.0' },
+    });
+    const sessao = 'cs_' + crypto.randomBytes(4).toString('hex');
+    let barras = null;
+    let completo = false;
+    let encerrado = false;
+    const terminar = (err, valor) => {
+      if (encerrado) return;
+      encerrado = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch (_) {}
+      if (err) reject(err); else resolve(valor);
+    };
+    const timer = setTimeout(() => terminar(new Error('histórico do mini índice sem resposta')), 8000);
+    const tentar = () => { if (completo && barras) terminar(null, fechamentosDasBarras(barras)); };
+    ws.on('open', () => {
+      ws.send(pacoteSocket({ m: 'set_auth_token', p: ['unauthorized_user_token'] }));
+      ws.send(pacoteSocket({ m: 'chart_create_session', p: [sessao, ''] }));
+      ws.send(pacoteSocket({ m: 'resolve_symbol', p: [sessao, 'sym_1', '=' + JSON.stringify({ symbol: 'BMFBOVESPA:WIN1!', adjustment: 'splits' })] }));
+      ws.send(pacoteSocket({ m: 'create_series', p: [sessao, 's1', 's1', 'sym_1', 'D', 180] }));
+    });
+    ws.on('message', (data) => {
+      for (const corpo of mensagensDoSocket(data)) {
+        if (corpo.startsWith('~h~')) { try { ws.send(`~m~${corpo.length}~m~${corpo}`); } catch (_) {} continue; }
+        let msg;
+        try { msg = JSON.parse(corpo); } catch { continue; }
+        if (msg.m === 'series_error' || msg.m === 'symbol_error' || msg.m === 'critical_error') {
+          terminar(new Error('histórico do mini índice indisponível'));
+          return;
+        }
+        if (msg.m === 'timescale_update' || msg.m === 'du') {
+          const achadas = barrasNoPacote(msg.p);
+          if (achadas && achadas.length) barras = achadas;
+          tentar();
+        }
+        if (msg.m === 'series_completed') { completo = true; tentar(); }
+      }
+    });
+    ws.on('error', () => terminar(new Error('histórico do mini índice indisponível')));
+    ws.on('close', () => {
+      if (barras) terminar(null, fechamentosDasBarras(barras));
+      else terminar(new Error('histórico do mini índice caiu'));
+    });
+  });
+}
+
+let _fechamentosWin = null;
+let _fechamentosWinVoo = null;
+async function fechamentosMiniIndice() {
+  const agora = Date.now();
+  if (_fechamentosWin && _fechamentosWin.ate > agora) return _fechamentosWin.closes;
+  if (_fechamentosWinVoo) return _fechamentosWinVoo;
+  _fechamentosWinVoo = buscarFechamentosMiniIndice().then((closes) => {
+    if (closes && closes.length >= 2) _fechamentosWin = { ate: Date.now() + 600_000, closes };
+    return closes || [];
+  }).catch((e) => {
+    log('erro', 'histórico WIN:', e.message);
+    return (_fechamentosWin && _fechamentosWin.closes) || [];
+  }).finally(() => { _fechamentosWinVoo = null; });
+  return _fechamentosWinVoo;
+}
+
+/** Card do mini índice: preço do pregão e o mesmo desenho de 6 meses dos outros cards. */
+function cardDoMiniIndice(def, closes) {
+  const q = _quotesAoVivo.get(def.symbol);
+  const vivo = q && cotacaoParaCard(def, q);
+  const serie = (closes || []).slice();
+  const preco = vivo && vivo.preco != null ? vivo.preco : (serie.length ? serie[serie.length - 1] : null);
+  if (serie.length && preco != null) serie[serie.length - 1] = preco;
+  const base = vivo || {
+    symbol: def.symbol, nome: def.nome, tipo: def.tipo, moeda: null,
+    preco, variacao: null, variacaoPontos: null,
+  };
+  return { ...base, preco, pontos: amostrar(serie, 48) };
+}
+
 /** Histórico do Yahoo -> card do painel. Índice sai em pontos; câmbio carrega a moeda. */
 function montarCardMercado(def, historico) {
   const preco = historico && historico.preco;
@@ -910,12 +1044,8 @@ app.get('/api/monitor/painel', limitarDados, async (_req, res) => {
   const cache = cacheGet('painel-mercado', 60_000, false);
   if (cache) { res.setHeader('Cache-Control', 'public, max-age=30'); return res.json(cache); }
   const resumos = await Promise.all(PAINEL_MERCADO.map(async (def) => {
-    // O mini índice não tem histórico no Yahoo. O card entra vazio e o preço ao vivo preenche.
-    if (def.symbol === 'WIN1!') {
-      const q = _quotesAoVivo.get(def.symbol);
-      const card = q && cotacaoParaCard(def, q);
-      return card ? { ...card, pontos: [] } : { symbol: def.symbol, nome: def.nome, tipo: def.tipo, moeda: null, preco: null, variacao: null, variacaoPontos: null, pontos: [] };
-    }
+    // O mini índice não tem histórico no Yahoo. O desenho sai do contrato contínuo.
+    if (def.symbol === 'WIN1!') return cardDoMiniIndice(def, await fechamentosMiniIndice());
     try { return montarCardMercado(def, await historicoComCache(def.symbol, '6mo')); }
     catch (e) { log('erro', `painel ${def.symbol}:`, e.message); return null; }
   }));
@@ -1655,4 +1785,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, proximoLoteAoVivo, filtrarSimbolosAoVivo };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoDolarStreaming, cotacaoFuturoB3, fechamentosDasBarras, proximoLoteAoVivo, filtrarSimbolosAoVivo };
