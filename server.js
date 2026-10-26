@@ -309,6 +309,12 @@ app.post('/api/chat', limitar, exigirSenha, async (req, res) => {
 // ---------- Cotações (proxy Yahoo Finance — evita CORS no navegador) ----------
 const https = require('https');
 const SIMBOLOS_COTACOES = ['^BVSP', 'USDBRL=X', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
+// Faixa da página principal: o índice e o dólar à vista, e ao lado o futuro de cada um.
+const ORDEM_FAIXA = ['^BVSP', 'WIN1!', 'USDBRL=X', 'WDO1!', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
+const FUTUROS_B3 = [
+  { symbol: 'WIN1!', nome: 'Ibov fut.', tv: 'BMFBOVESPA:WIN1!' },
+  { symbol: 'WDO1!', nome: 'Dólar fut.', tv: 'BMFBOVESPA:WDO1!' },
+];
 
 // Cache em memória para não bater na API a cada requisição
 let _cotCache = null;
@@ -1006,6 +1012,11 @@ const DOLAR_FINNHUB_SIMBOLO = 'OANDA:USD_BRL';
 let _dolarFinnhubBuscando = false;
 let _dolarFinnhubProxima = 0;
 let _dolarFinnhubErroEm = 0;
+// O futuro da B3 nessa fonte chega com cerca de 15 min de atraso; 5 s basta e não martela o serviço.
+const FUTUROS_B3_MS = 5_000;
+let _futurosBuscando = false;
+let _futurosProxima = 0;
+let _futurosErroEm = 0;
 
 function registrarInteresseAoVivo(extras) {
   const agora = Date.now();
@@ -1030,10 +1041,29 @@ function guardarCotacoesAoVivo(lista) {
   if (itens.length) _painelAoVivo = { itens, atualizadoEm: new Date().toISOString(), fonte };
 }
 
+/**
+ * Linha do scanner de futuros -> cotação da faixa. O preço já vem na escala do pregão
+ * (WIN em pontos do índice, WDO em pontos do dólar). change é a variação percentual do dia.
+ */
+function cotacaoFuturoB3(def, linha) {
+  const preco = linha && Number(linha.close);
+  if (!def || !isFinite(preco) || preco <= 0) return null;
+  const variacao = linha.change == null ? null : Number(linha.change);
+  return {
+    symbol: def.symbol,
+    shortName: def.nome,
+    regularMarketPrice: preco,
+    regularMarketChangePercent: isFinite(variacao) ? variacao : null,
+    moeda: null,
+    fonte: 'TradingView',
+    atrasoMin: 15,
+  };
+}
+
 function cotacoesPublicas(simbolos) {
   const lista = [];
   const vistos = new Set();
-  for (const s of [...SIMBOLOS_COTACOES, ...simbolos]) {
+  for (const s of [...ORDEM_FAIXA, ...simbolos]) {
     if (vistos.has(s)) continue;
     vistos.add(s);
     const q = _quotesAoVivo.get(s);
@@ -1044,6 +1074,7 @@ function cotacoesPublicas(simbolos) {
       preco: q.regularMarketPrice,
       variacao: q.regularMarketChangePercent,
       moeda: q.moeda || null,
+      atrasoMin: q.atrasoMin || null,
     });
   }
   return lista;
@@ -1089,6 +1120,32 @@ function atualizarDolarFinnhub() {
   }).finally(() => { _dolarFinnhubBuscando = false; });
 }
 
+function atualizarFuturosB3() {
+  const agora = Date.now();
+  if (_futurosBuscando || agora < _futurosProxima) return;
+  _futurosBuscando = true;
+  _futurosProxima = agora + FUTUROS_B3_MS;
+  const colunas = ['close', 'change'];
+  postJson('https://scanner.tradingview.com/futures/scan', {
+    symbols: { tickers: FUTUROS_B3.map((f) => f.tv), query: { types: [] } },
+    columns: colunas,
+  }, {
+    timeout: 8000,
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+  }).then((j) => {
+    const porTv = new Map((j.data || []).map((row) => [row.s, { close: row.d && row.d[0], change: row.d && row.d[1] }]));
+    const lista = FUTUROS_B3.map((def) => cotacaoFuturoB3(def, porTv.get(def.tv))).filter(Boolean);
+    if (lista.length) guardarCotacoesAoVivo(lista);
+    else throw new Error('futuros da B3 sem preço');
+  }).catch((e) => {
+    _futurosProxima = Date.now() + FUTUROS_B3_MS;
+    if (Date.now() - _futurosErroEm > 60_000) {
+      _futurosErroEm = Date.now();
+      log('erro', 'futuros B3:', e.message);
+    }
+  }).finally(() => { _futurosBuscando = false; });
+}
+
 function cicloPainelAoVivo() {
   if (Date.now() - _ultimoPedidoPainel > 6_000 || !_interesseAoVivo.size) {
     if (_painelTimer) { clearInterval(_painelTimer); _painelTimer = null; }
@@ -1096,6 +1153,7 @@ function cicloPainelAoVivo() {
     return;
   }
   const todos = [..._interesseAoVivo.keys()];
+  atualizarFuturosB3();
   if (FINNHUB_KEY && _interesseAoVivo.has('USDBRL=X')) atualizarDolarFinnhub();
   if (!_fixosBuscando) {
     // Com a chave, o dólar não entra no lote do Yahoo: senão o preço atrasado da bolsa
@@ -1573,4 +1631,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, proximoLoteAoVivo, filtrarSimbolosAoVivo };
+module.exports = { app, blocosDosAnexos, podarAnexosAntigos, ferramentaBuscaWeb, mensagemErroAnthropic, montarFundamentos, montarCardMercado, cotacaoParaCard, cotacaoDolarFinnhub, cotacaoFuturoB3, proximoLoteAoVivo, filtrarSimbolosAoVivo };

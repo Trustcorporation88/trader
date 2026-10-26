@@ -269,7 +269,7 @@ button.card-mercado:hover{border-color:var(--laranja)}
   <section class="cartao" id="painel">
     <h2><span class="etiqueta">Mercados</span> Ibovespa, câmbio, Bitcoin, Brent e Nova York <span class="extra" id="painelHora"></span></h2>
     <div class="painel" id="painelCards"><span class="carregando">Carregando índices…</span></div>
-    <p class="nota">Preço ao vivo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto. O Real/Dólar vem da Finnhub a cada 2 segundos; o restante vem do Yahoo Finance a cada segundo. A bolsa pode publicar com atraso e isto não gasta crédito da Fincept. O desenho é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais, Bitcoin e Brent em dólar. Não é recomendação de compra ou venda.</p>
+    <p class="nota">Preço ao vivo enquanto esta página está aberta: estes cards, a faixa do topo, a watchlist, os alertas e o ativo aberto. O Real/Dólar vem da Finnhub a cada 2 segundos; o restante dos cards vem do Yahoo Finance a cada segundo. Na faixa, Ibovespa futuro e dólar futuro são o contrato contínuo da B3, com cerca de 15 minutos de atraso. A bolsa pode publicar com atraso e isto não gasta crédito da Fincept. O desenho é dos últimos 6 meses. Clique num card para abrir o ativo no gráfico. Índice em pontos, câmbio em reais, Bitcoin e Brent em dólar. Não é recomendação de compra ou venda.</p>
   </section>
 
   <div class="grade-principal">
@@ -485,12 +485,17 @@ let abaNoticias = 'mercado';
 const cotacoes = {}; // symbol -> { preco, variacao, moeda, nome, ts }
 
 // ---------- Faixa de cotações (reaproveita /api/cotacoes) ----------
-const FAIXA_SIMBOLOS = ['^BVSP', 'USDBRL=X', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
+const FAIXA_SIMBOLOS = ['^BVSP', 'WIN1!', 'USDBRL=X', 'WDO1!', 'BTC-USD', 'BZ=F', '^GSPC', '^DJI'];
+function fmtFaixaPreco(q, preco){
+  if (q.symbol === 'WIN1!') return preco == null ? '—' : preco.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  if (q.symbol === 'WDO1!') return preco == null ? '—' : preco.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return fmtPreco(preco);
+}
 function htmlFaixa(q){
   const preco = q.preco != null ? q.preco : q.regularMarketPrice;
   const variacao = q.variacao != null ? q.variacao : q.regularMarketChangePercent;
   const nome = q.nome || q.shortName || q.symbol;
-  return `<span class="it" data-s="${esc(q.symbol)}"><span class="n">${esc(nome)}</span><b>${fmtPreco(preco)}</b><span class="${classeVar(variacao)}">${fmtVar(variacao)}</span></span>`;
+  return `<span class="it" data-s="${esc(q.symbol)}"><span class="n">${esc(nome)}</span><b>${fmtFaixaPreco(q, preco)}</b><span class="${classeVar(variacao)}">${fmtVar(variacao)}</span></span>`;
 }
 function renderFaixa(itens){
   const box = $('faixa');
@@ -503,7 +508,7 @@ function renderFaixa(itens){
   itens.forEach((q, i) => {
     const preco = q.preco != null ? q.preco : q.regularMarketPrice;
     const variacao = q.variacao != null ? q.variacao : q.regularMarketChangePercent;
-    nos[i].querySelector('b').textContent = fmtPreco(preco);
+    nos[i].querySelector('b').textContent = fmtFaixaPreco(q, preco);
     const span = nos[i].querySelector('b').nextElementSibling;
     span.className = classeVar(variacao);
     span.textContent = fmtVar(variacao);
